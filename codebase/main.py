@@ -2,10 +2,12 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import os
+import re
+import time
 from pathlib import Path
 
-# Cấu hình log
-from logger import log_error
+# Tích hợp Logger (Person 4 — Hoàng Hiếu Trung)
+from logger import log_request, log_places_result, log_ai_response, log_agent_metrics, log_error
 
 # Import cho Agent
 from models import ChatRequest
@@ -37,13 +39,15 @@ default_model = getattr(provider, "default_model", None)
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
+    # [1] Log request ngay khi nhận — ghi nhận toạ độ và preview message
+    msg_preview = req.messages[-1].content[:80] if req.messages else ""
+    log_request({"message": msg_preview}, req.lat or 0.0, req.lng or 0.0)
+
+    t0 = time.perf_counter()
     try:
         # Chuyển đổi tin nhắn cho provider
         messages = [{"role": msg.role, "content": msg.content} for msg in req.messages]
-        
-        # Nếu có toạ độ, có thể nhúng vào prompt hệ thống
-        # Trong hackathon, system_prompt tĩnh là đủ, tool search_nearby sẽ hỏi nếu thiếu vị trí
-        
+
         result = run_model_tool_loop(
             provider=provider,
             messages=messages,
@@ -51,7 +55,41 @@ async def chat(req: ChatRequest):
             model=default_model,
             max_tool_rounds=4,
         )
+
+        elapsed_ms = int((time.perf_counter() - t0) * 1000)
+        tool_events = result.get("tool_events", [])
+
+        # [2] Log places result — trích từ kết quả search_nearby
+        for event in tool_events:
+            if event.get("tool") == "search_nearby":
+                search_res = event.get("result", {})
+                places_count = len(search_res.get("places", []))
+                radius = search_res.get("radius", 500)
+                log_places_result(places_count, radius)
+                break
+
+        # [3] Log AI response — trích cards từ format_recommendations
+        fmt_events = [e for e in tool_events if e.get("tool") == "format_recommendations"]
+        cards = fmt_events[-1].get("result", {}).get("cards", []) if fmt_events else []
+        warning = None
+        for event in tool_events:
+            w = event.get("result", {})
+            if isinstance(w, dict) and w.get("warning"):
+                warning = w["warning"]
+                break
+        log_ai_response(cards, warning)
+
+        # [4] Log agent metrics — latency + model + parse success
+        log_agent_metrics(
+            latency_ms=elapsed_ms,
+            prompt_tokens=0,       # Tool-calling loop không expose token count
+            completion_tokens=0,
+            model=default_model or "unknown",
+            parsing_success=isinstance(result, dict) and "status" in result,
+        )
+
         return result
+
     except Exception as e:
         log_error("chat_endpoint", str(e))
         return {"error": "server_error", "message": str(e)}
@@ -60,7 +98,6 @@ async def chat(req: ChatRequest):
 def health():
     return {"status": "ok"}
 
-import re
 
 @app.get("/metrics")
 def get_metrics():
