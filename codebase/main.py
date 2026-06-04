@@ -70,4 +70,16 @@ if not os.path.exists("frontend/index.html"):
     with open("frontend/index.html", "w", encoding="utf-8") as f:
         f.write("<h1>Frontend Placeholder</h1>")
 
-app.mount("/", StaticFiles(directory="frontend", html=True), name="frontend")
+class NoCacheStaticFiles(StaticFiles):
+    def is_not_modified(self, response_headers, req_headers) -> bool:
+        return False
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"] = "no-cache"
+        response.headers["Expires"] = "0"
+        return response
+
+app.mount("/", NoCacheStaticFiles(directory="frontend", html=True), name="frontend")
+
