@@ -12,9 +12,10 @@ side_effect: false
 Hỏi người dùng để thu thập thông tin hoặc xác nhận hành động.
 
 Dùng trong các trường hợp:
-- **MCQ flow**: Hỏi 4 câu MCQ (bữa ăn, đi cùng ai, phong cách, yêu cầu đặc biệt)
-- **Thiếu thông tin**: Hỏi bổ sung khi thiếu vị trí GPS, chưa rõ nhu cầu
-- **Xác nhận**: Xác nhận trước khi mở đường đi Google Maps
+- **Gỡ rối & Thu hẹp lựa chọn**: Dùng MCQ để hỏi nhanh khi yêu cầu quá chung chung (vd: "đói quá") hoặc mâu thuẫn.
+- **Ràng buộc quan trọng**: Dùng MCQ để xác nhận chính xác mức độ ăn chay, dị ứng, tôn giáo.
+- **Thiếu vị trí**: Hỏi bổ sung bằng text khi chưa có tọa độ GPS.
+- **Xác nhận**: Xác nhận (yes/no) trước khi mở Google Maps.
 
 `response_type`:
 - `"choice"` → MCQ với danh sách `options`
