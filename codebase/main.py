@@ -38,22 +38,16 @@ default_model = getattr(provider, "default_model", None)
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
-        messages = [{"role": msg.role, "content": msg.content} for msg in req.messages]
-
-        # Inject GPS vào system message khi frontend đã lấy được vị trí thật.
-        # Nếu không inject, LLM sẽ gọi tool mà không có lat/lng → tool fallback sang IP.
+        # Chuyển đổi tin nhắn cho provider, luôn prepend system_prompt
+        user_messages = [{"role": msg.role, "content": msg.content} for msg in req.messages]
+        
+        # Nhúng toạ độ GPS vào system_prompt nếu client gửi kèm
+        sp = system_prompt
         if req.lat is not None and req.lng is not None:
-            gps_note = (
-                f"\n\n[GPS] Vị trí thật của người dùng: lat={req.lat}, lng={req.lng}. "
-                f"Khi gọi search_nearby_restaurants, LUÔN truyền lat={req.lat} và lng={req.lng}."
-            )
-            sys_idx = next((i for i, m in enumerate(messages) if m["role"] == "system"), None)
-            if sys_idx is not None:
-                messages[sys_idx] = {**messages[sys_idx],
-                                     "content": messages[sys_idx]["content"] + gps_note}
-            else:
-                messages.insert(0, {"role": "system", "content": system_prompt + gps_note})
-
+            sp = f"[Vị trí người dùng: lat={req.lat:.6f}, lng={req.lng:.6f}]\n\n" + sp
+        
+        messages = [{"role": "system", "content": sp}] + user_messages
+        
         result = run_model_tool_loop(
             provider=provider,
             messages=messages,
@@ -69,56 +63,6 @@ async def chat(req: ChatRequest):
 @app.get("/health")
 def health():
     return {"status": "ok"}
-
-import re
-
-@app.get("/metrics")
-def get_metrics():
-    """
-    Endpoint của Person 4 (Tester/Logger)
-    Đọc file app.log và tính toán các metrics (Observability)
-    """
-    log_file = "app.log"
-    if not os.path.exists(log_file):
-        return {"status": "no_logs", "message": "Chưa có file app.log"}
-        
-    stats = {
-        "total_requests": 0,
-        "total_places_found": 0,
-        "total_ai_responses": 0,
-        "avg_latency_ms": 0,
-        "errors": 0
-    }
-    
-    latency_sum = 0
-    latency_count = 0
-    
-    try:
-        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
-            for line in f:
-                if "[1] REQUEST" in line:
-                    stats["total_requests"] += 1
-                elif "[2] PLACES" in line:
-                    match = re.search(r"found=(\d+)", line)
-                    if match:
-                        stats["total_places_found"] += int(match.group(1))
-                elif "[3] AI_RESP" in line:
-                    stats["total_ai_responses"] += 1
-                elif "[4] AGENT_METRICS" in line:
-                    match = re.search(r"latency=(\d+)ms", line)
-                    if match:
-                        latency_sum += int(match.group(1))
-                        latency_count += 1
-                elif "ERROR |" in line:
-                    stats["errors"] += 1
-                    
-        if latency_count > 0:
-            stats["avg_latency_ms"] = round(latency_sum / latency_count, 2)
-            
-        return {"status": "success", "data": stats}
-    except Exception as e:
-        return {"status": "error", "message": str(e)}
-
 
 # Serve frontend
 os.makedirs("frontend", exist_ok=True)
