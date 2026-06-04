@@ -1960,6 +1960,30 @@
     function mapsUrl(q) { return `https://www.google.com/maps/search/${encodeURIComponent(q)}` }
     function getTime() { return new Date().toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' }) }
 
+    /** Tính khoảng cách Haversine giữa 2 tọa độ (trả về km) */
+    function haversineDistance(lat1, lon1, lat2, lon2) {
+      const R = 6371;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat / 2) * Math.sin(dLat / 2)
+        + Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180)
+        * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+      return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    /** Format khoảng cách: dưới 1km → "XXX m", trên 1km → "X.X km" */
+    function formatDistance(km) {
+      if (km < 1) return `${Math.round(km * 1000)} m`;
+      return `${km.toFixed(1)} km`;
+    }
+
+    /** Trả về HTML tag khoảng cách nếu có vị trí người dùng và tọa độ quán */
+    function distanceTag(lat, lng) {
+      if (!userLocation || lat == null || lng == null) return '';
+      const km = haversineDistance(userLocation.lat, userLocation.lng, lat, lng);
+      return `<span class="tag dist">🚶 Cách bạn ${formatDistance(km)}</span>`;
+    }
+
     function appendRow(html, isUser = false) {
       removeWelcome();
       const b = $body(), r = document.createElement('div');
@@ -2259,11 +2283,11 @@
         if (data.error) {
           renderSimpleBot('❌ Đã xảy ra lỗi: ' + data.message);
         } else {
-          if (data.assistant_text) {
-            renderSimpleBot(data.assistant_text);
-            window.chatMessages.push({ role: "assistant", content: data.assistant_text });
-          }
+          let renderedSpecial = false;
+          // Map: restaurant name (lowercase) → {lat, lng} từ tool results
+          const coordsMap = {};
 
+          // Log tool events and handle special tools
           if (data.tool_events && data.tool_events.length > 0) {
             data.tool_events.forEach(ev => {
               const argsStr = JSON.stringify(ev.args, null, 2);
@@ -2273,28 +2297,205 @@
 <span class="kw">Args</span>: <span class="val">${argsStr}</span>
 <span class="kw">Result</span>: <span class="str">${resStr}</span>`);
 
+              // Thu thập tọa độ từ bất kỳ tool nào trả về danh sách quán
+              const places = ev.result?.recommendations || ev.result?.places || ev.result?.results || [];
+              places.forEach(p => {
+                const lat = p.geometry?.location?.lat ?? p.lat ?? null;
+                const lng = p.geometry?.location?.lng ?? p.lng ?? null;
+                if (p.name && lat != null && lng != null) {
+                  coordsMap[p.name.toLowerCase()] = { lat, lng };
+                }
+              });
+
               if (ev.tool === 'format_recommendations' && ev.result && ev.result.recommendations) {
-                renderAPIRecommendations(ev.result.recommendations);
+                renderAPIRecommendations(ev.result.recommendations, data.assistant_text);
+                window.chatMessages.push({ role: "assistant", content: data.assistant_text || '' });
+                renderedSpecial = true;
               }
               if (ev.tool === 'clarify' && ev.args && ev.args.response_type === 'choice') {
                 renderAPIMCQ(ev.args.question, ev.args.options);
+                window.chatMessages.push({ role: "assistant", content: data.assistant_text || '' });
+                renderedSpecial = true;
               }
             });
+          }
+
+          // No special tool result → try to parse AI text as reco cards
+          if (!renderedSpecial && data.assistant_text) {
+            const parsed = parseAITextToCards(data.assistant_text);
+            if (parsed && parsed.length > 0) {
+              // Enrich cards với tọa độ từ tool results (nếu có)
+              parsed.forEach(card => {
+                const key = card.name.toLowerCase();
+                if (coordsMap[key]) {
+                  card.lat = coordsMap[key].lat;
+                  card.lng = coordsMap[key].lng;
+                } else {
+                  // Tìm gần đúng (fuzzy match tên quán)
+                  for (const [k, v] of Object.entries(coordsMap)) {
+                    if (k.includes(card.name.toLowerCase().substring(0, 8)) ||
+                        card.name.toLowerCase().includes(k.substring(0, 8))) {
+                      card.lat = v.lat; card.lng = v.lng; break;
+                    }
+                  }
+                }
+              });
+              renderParsedCards(parsed, data.assistant_text);
+            } else {
+              renderSimpleBot(data.assistant_text);
+
+            }
+            window.chatMessages.push({ role: "assistant", content: data.assistant_text });
           }
         }
       } catch (err) {
         removeTypingDots();
         renderSimpleBot('❌ Lỗi kết nối tới server.');
         console.error(err);
+      } finally {
+        // Luôn unlock UI dù có return sớm hay lỗi
+        isTyping = false;
+        btn.disabled = false;
+        document.getElementById('chat-input').focus();
       }
-
-      isTyping = false; btn.disabled = false;
-      document.getElementById('chat-input').focus();
     }
 
-    function renderAPIRecommendations(recs) {
-      const cardsHtml = recs.map((r, i) => `
-    <div class="reco-card r${i + 1}">
+
+    /**
+     * Parse AI plain-text response into structured restaurant cards.
+     * Handles markdown bullet/numbered lists with 📍⭐💡 emoji patterns.
+     */
+    function parseAITextToCards(text) {
+      if (!text) return null;
+      const cards = [];
+
+      // Split by numbered list items like "1.", "2.", "**1.**" or blank-line separated blocks
+      // Each block starts with a restaurant name (bold or plain) followed by details
+      const blocks = text.split(/\n(?=\d+[\.\)]\s|\*\*\d+[\.\)]\*\*)/g).filter(b => b.trim());
+
+      // Need at least 2 blocks (intro + 1 restaurant)
+      if (blocks.length < 2) {
+        // Try alternative: split by double newlines
+        const altBlocks = text.split(/\n{2,}/).filter(b => /📍|⭐|💡/.test(b));
+        if (altBlocks.length < 2) return null;
+
+        for (const block of altBlocks) {
+          const card = extractCardFromBlock(block);
+          if (card) cards.push(card);
+        }
+        return cards.length >= 2 ? cards : null;
+      }
+
+      // blocks[0] is intro, rest are restaurants
+      for (let i = 1; i < blocks.length; i++) {
+        const card = extractCardFromBlock(blocks[i]);
+        if (card) cards.push(card);
+      }
+      return cards.length >= 1 ? cards : null;
+    }
+
+    function extractCardFromBlock(block) {
+      const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+      if (lines.length < 2) return null;
+
+      // Extract name: first line, strip markdown bold/numbers
+      let name = lines[0].replace(/^\*{1,2}|\*{1,2}$/g, '').replace(/^\d+[\.\)]\s*/, '').replace(/\*\*/g, '').trim();
+      if (!name || name.length < 2) return null;
+
+      let address = '', rating = '', reason = '', warning = '', mapsLink = '';
+
+      for (const line of lines.slice(1)) {
+        const clean = line.replace(/\*\*/g, '').trim();
+        if (clean.startsWith('📍')) {
+          address = clean.replace(/^📍\s*/, '').trim();
+          // Build Google Maps link from address
+          mapsLink = `https://www.google.com/maps/search/${encodeURIComponent(name + ' ' + address)}`;
+        } else if (clean.startsWith('⭐')) {
+          rating = clean.replace(/^⭐\s*/, '').trim();
+        } else if (clean.startsWith('💡')) {
+          reason = clean.replace(/^💡\s*/, '').trim();
+        } else if (clean.startsWith('⚠️')) {
+          warning = clean.replace(/^⚠️\s*/, '').trim();
+        }
+      }
+
+      if (!address && !rating && !reason) return null;
+
+      return { name, address, rating, reason, warning, mapsLink };
+    }
+
+    function renderParsedCards(cards, fullText) {
+      // Extract intro text (before first numbered restaurant)
+      let intro = '';
+      const introMatch = fullText.match(/^([\s\S]*?)(?=\n\d+[\.\)]|\n\*\*\d+)/);
+      if (introMatch) intro = introMatch[1].trim();
+      // Fallback: use first line
+      if (!intro) intro = fullText.split('\n')[0];
+
+      // Extract warning at end
+      let footerWarning = '';
+      const warnMatch = fullText.match(/⚠️[^\n]*/g);
+      if (warnMatch) footerWarning = warnMatch[warnMatch.length - 1].replace(/⚠️\s*/, '');
+
+      const cardsHtml = cards.map((r, i) => {
+        const rankClass = `r${Math.min(i + 1, 3)}`;
+        const starsHtml = r.rating ? '★'.repeat(Math.min(Math.round(parseFloat(r.rating)), 5)) + '☆'.repeat(Math.max(5 - Math.round(parseFloat(r.rating)), 0)) : '';
+        return `
+    <div class="reco-card ${rankClass}">
+      <div class="reco-top">
+        <div class="reco-emoji">🍽️</div>
+        <div class="reco-body">
+          <div class="reco-header">
+            <span class="reco-name">${r.name}</span>
+            <span class="rank-badge">#${i + 1} AI Pick</span>
+          </div>
+          ${r.address ? `<div class="reco-desc">📍 ${r.address}</div>` : ''}
+          <div class="reco-tags">
+            ${r.rating ? `<span class="tag score">⭐ ${r.rating}</span>` : ''}
+            ${distanceTag(r.lat, r.lng)}
+          </div>
+        </div>
+        ${r.rating ? `<div class="score-chip">
+          <div class="score-val">${parseFloat(r.rating).toFixed(1)}</div>
+          <div class="score-star" style="color:#f59e0b">${starsHtml}</div>
+          <div class="score-lbl">Rating</div>
+        </div>` : ''}
+      </div>
+      ${r.reason ? `<div class="reason-box">
+        <div class="reason-title">💡 Lý do gợi ý</div>
+        <p>${r.reason}</p>
+      </div>` : ''}
+      <div class="card-actions">
+        ${r.mapsLink ? `<a class="map-btn" href="${r.mapsLink}" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+          </svg>
+          Xem trên Google Maps
+        </a>` : ''}
+      </div>
+    </div>`;
+      }).join('');
+
+      appendRow(`<div class="avatar bot">🍜</div>
+  <div class="bwrap" style="max-width:86%">
+    <div class="bubble bot">
+      ${intro ? `<div style="font-weight:600;margin-bottom:10px">${intro}</div>` : ''}
+      <div class="reco-list">${cardsHtml}</div>
+      ${footerWarning ? `<div style="margin-top:12px;font-size:12px;color:var(--yellow);background:rgba(245,158,11,.08);border:1px solid rgba(245,158,11,.2);border-radius:8px;padding:8px 11px">⚠️ ${footerWarning}</div>` : ''}
+      <div style="margin-top:10px;font-size:12px;color:var(--txt-4)">
+        Bấm <strong style="color:var(--primary)">Xem trên Google Maps</strong> để được dẫn đường đến từng quán 🗺️
+      </div>
+    </div>
+    <div class="msg-time">${getTime()}</div>
+  </div>`);
+    }
+
+    function renderAPIRecommendations(recs, introText) {
+      const cardsHtml = recs.map((r, i) => {
+        const rLat = r.geometry?.location?.lat ?? r.lat ?? null;
+        const rLng = r.geometry?.location?.lng ?? r.lng ?? null;
+        return `
+    <div class="reco-card r${Math.min(i+1,3)}">
       <div class="reco-top">
         <div class="reco-emoji">🍽️</div>
         <div class="reco-body">
@@ -2304,23 +2505,40 @@
           </div>
           <div class="reco-desc">${r.vicinity || r.address || ''}</div>
           <div class="reco-tags">
-            <span class="tag score">⭐ ${r.rating || '?'}</span>
+            ${r.rating ? `<span class="tag score">⭐ ${r.rating}</span>` : ''}
+            ${distanceTag(rLat, rLng)}
           </div>
         </div>
+        ${r.rating ? `<div class="score-chip">
+          <div class="score-val">${parseFloat(r.rating).toFixed(1)}</div>
+          <div class="score-star" style="color:#f59e0b">${'★'.repeat(Math.min(Math.round(parseFloat(r.rating)),5))}${'☆'.repeat(Math.max(5-Math.round(parseFloat(r.rating)),0))}</div>
+          <div class="score-lbl">Rating</div>
+        </div>` : ''}
       </div>
-      <div class="reason-box">
+      ${r.reason ? `<div class="reason-box">
         <div class="reason-title">💡 Lý do gợi ý</div>
-        <p>${r.reason || ''}</p>
-      </div>
+        <p>${r.reason}</p>
+      </div>` : ''}
       <div class="card-actions">
-        ${r.maps_link ? `<a class="map-btn" href="${r.maps_link}" target="_blank" rel="noopener noreferrer">Xem trên Google Maps</a>` : ''}
+        ${r.maps_link ? `<a class="map-btn" href="${r.maps_link}" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+          </svg>
+          Xem trên Google Maps
+        </a>` : ''}
       </div>
-    </div>`).join('');
+    </div>`;
+      }).join('');
 
+      const intro = introText ? introText.split('\n')[0] : '';
       appendRow(`<div class="avatar bot">🍜</div>
   <div class="bwrap" style="max-width:86%">
     <div class="bubble bot">
+      ${intro ? `<div style="font-weight:600;margin-bottom:10px">${intro}</div>` : ''}
       <div class="reco-list">${cardsHtml}</div>
+      <div style="margin-top:10px;font-size:12px;color:var(--txt-4)">
+        Bấm <strong style="color:var(--primary)">Xem trên Google Maps</strong> để được dẫn đường đến từng quán 🗺️
+      </div>
     </div>
     <div class="msg-time">${getTime()}</div>
   </div>`);
