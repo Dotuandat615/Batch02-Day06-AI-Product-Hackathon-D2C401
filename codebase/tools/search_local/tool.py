@@ -29,7 +29,16 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
+from pydantic import BaseModel, Field
 from modules.location import LocationService, Restaurant
+
+
+class SearchInput(BaseModel):
+    query: str = "quán ăn"
+    lat: float | None = None
+    lng: float | None = None
+    radius_km: float = 1.5
+    max_results: int = Field(default=5, ge=1, le=20)
 
 # ── Tool schema (Claude API format) ───────────────────────────────────────────
 
@@ -86,67 +95,22 @@ def execute(**kwargs) -> str:
     """
     Chạy tool khi agent gọi.
 
-    Params:
-        kwargs : dict theo input_schema ở trên
-                     {"query": "quán ăn", "lat": 12.2451, "lng": 109.1943, ...}
+    Params (keyword args, validated by SearchInput):
+        query      : từ khoá tìm kiếm
+        lat        : vĩ độ người dùng (None → auto-detect qua IP)
+        lng        : kinh độ người dùng (None → auto-detect qua IP)
+        radius_km  : bán kính km (default 1.5)
+        max_results: số quán tối đa (default 5, max 20)
 
     Trả về:
         JSON string — agent đọc trực tiếp.
-        Schema:
-        {
-          "location": {"display_name": "...", "lat": ..., "lng": ...},
-          "query": "...",
-          "radius_km": 1.5,
-          "total_found": 5,
-          "restaurants": [
-            {
-              "rank": 1,
-              "name": "...",
-              "address": "...",
-              "distance": "350m",
-              "rating": 4.6,
-              "review_count": 234,
-              "type": "Nhà hàng",
-              "price": "1-100.000 ₫",
-              "open_state": "Đang mở cửa · Đóng cửa vào 22:00",
-              "operating_hours": {"thứ hai": "08:00–22:00", ...},
-              "highlights": ["Cà phê ngon", "Wi-Fi"],
-              "offerings": ["Cà phê", "Bánh"],
-              "atmosphere": ["Yên tĩnh"],
-              "popular_for": ["Phù hợp để làm việc"],
-              "amenities": ["Nhà vệ sinh", "Wi-Fi miễn phí"],
-              "service_options": ["Ăn tại chỗ", "Mang về"],
-              "parking": ["Bãi đỗ xe miễn phí"],
-              "payments": ["Thẻ tín dụng"],
-              "phone": "+84 ...",
-              "website": "https://...",
-              "user_review": "\"Quán ngon, giá hợp lý\"",
-              "maps_url": "https://www.google.com/maps/dir/...",
-              "thumbnail": "https://..."
-            },
-            ...
-          ],
-          "error": null
-        }
     """
-    query      = kwargs.get("query", "quán ăn")
-    keyword    = kwargs.get("keyword")
-    meal_time  = kwargs.get("meal_time")
-    
-    if keyword and keyword not in query:
-        query = f"{query} {keyword}"
-    if meal_time and meal_time not in query:
-        query = f"{query} {meal_time}"
-        
-    lat        = kwargs.get("lat")
-    lng        = kwargs.get("lng")
-    radius_km  = float(kwargs.get("radius_km", 1.5))
-    max_results = min(int(kwargs.get("max_results", 5)), 20)
+    inp = SearchInput(**kwargs)
 
     try:
         svc = LocationService()
-        loc = svc.get_location(lat=lat, lng=lng)
-        restaurants = svc.get_nearby_restaurants(loc, radius_km=radius_km, query=query)
+        loc = svc.get_location(lat=inp.lat, lng=inp.lng)
+        restaurants = svc.get_nearby_restaurants(loc, radius_km=inp.radius_km, query=inp.query)
 
         return json.dumps({
             "location": {
@@ -157,18 +121,18 @@ def execute(**kwargs) -> str:
                 "lng":          loc.lng,
                 "source":       loc.source,
             },
-            "query":       query,
-            "radius_km":   radius_km,
+            "query":       inp.query,
+            "radius_km":   inp.radius_km,
             "total_found": len(restaurants),
-            "restaurants": [_format(r, rank) for rank, r in enumerate(restaurants[:max_results], 1)],
+            "restaurants": [_format(r, rank) for rank, r in enumerate(restaurants[:inp.max_results], 1)],
             "error":       None,
         }, ensure_ascii=False, indent=2)
 
     except Exception as e:
         return json.dumps({
             "location":    None,
-            "query":       query,
-            "radius_km":   radius_km,
+            "query":       inp.query,
+            "radius_km":   inp.radius_km,
             "total_found": 0,
             "restaurants": [],
             "error":       str(e),

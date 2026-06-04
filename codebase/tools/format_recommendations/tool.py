@@ -3,10 +3,47 @@ from __future__ import annotations
 import math
 from typing import Any
 
+from pydantic import BaseModel, Field, model_validator
+
+
+class RecommendationItem(BaseModel):
+    """Một quán gợi ý từ LLM.
+
+    Chấp nhận cả hai dạng toạ độ:
+    - flat: {"lat": 10.7, "lng": 106.6, ...}
+    - nested: {"geometry": {"location": {"lat": 10.7, "lng": 106.6}}, ...}
+    model_validator sẽ resolve về lat/lng flat sau khi parse.
+    """
+    place_id: str = ""
+    name: str = "Không rõ"
+    vicinity: str = ""
+    rating: float | None = None
+    reason: str = ""
+    confidence: str = "high"
+    geometry: dict[str, Any] = Field(default_factory=dict)
+    warning: str | None = None
+    thumbnail: str | None = None
+    lat: float = 0.0
+    lng: float = 0.0
+
+    @model_validator(mode="after")
+    def resolve_coordinates(self) -> "RecommendationItem":
+        """Nếu lat/lng = 0, thử lấy từ geometry.location."""
+        if self.lat == 0.0 and self.lng == 0.0:
+            loc = self.geometry.get("location", {})
+            self.lat = float(loc.get("lat", 0.0))
+            self.lng = float(loc.get("lng", 0.0))
+        return self
+
+
+class FormatInput(BaseModel):
+    recommendations: list[RecommendationItem] = Field(default_factory=list)
+    user_lat: float = 0.0
+    user_lng: float = 0.0
+
 
 def _haversine_m(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    """Khoảng cách giữa 2 tọa độ (mét), công thức Haversine."""
-    R = 6_371_000  # bán kính Trái Đất (m)
+    R = 6_371_000
     phi1, phi2 = math.radians(lat1), math.radians(lat2)
     dphi = math.radians(lat2 - lat1)
     dlam = math.radians(lng2 - lng1)
@@ -25,30 +62,27 @@ def _distance_text(meters: float) -> str:
 
 
 def _walk_time(meters: float) -> str:
-    minutes = int(meters / 80)  # ~80m/phút đi bộ
+    minutes = int(meters / 80)
     if minutes < 1:
         return "dưới 1 phút"
     return f"~{minutes} phút"
 
 
-def format_recs(
-    recommendations: list[dict[str, Any]] | None = None,
-    user_lat: float = 0.0,
-    user_lng: float = 0.0,
-) -> dict[str, Any]:
+def format_recs(**kwargs) -> dict[str, Any]:
     """Format danh sách quán gợi ý thành output cho user.
 
-    Args:
-        recommendations: Danh sách quán (từ AI engine), mỗi item có:
-            name, place_id, rating, vicinity, reason, confidence,
-            geometry.location.lat/lng
-        user_lat: Vĩ độ người dùng.
-        user_lng: Kinh độ người dùng.
+    Kwargs (validated by FormatInput):
+        recommendations: list quán gợi ý (tối đa 3), mỗi item có thể dùng
+                         flat lat/lng hoặc nested geometry.location.lat/lng
+        user_lat: vĩ độ người dùng
+        user_lng: kinh độ người dùng
 
     Returns:
         dict với "formatted_text" và "cards" cho UI render.
     """
-    if not recommendations:
+    inp = FormatInput(**kwargs)
+
+    if not inp.recommendations:
         return {
             "tool": "format_recommendations",
             "formatted_text": "Không có quán nào để hiển thị.",
@@ -58,33 +92,33 @@ def format_recs(
     cards: list[dict[str, Any]] = []
     lines: list[str] = []
 
-    for rank, rec in enumerate(recommendations[:3], 1):
-        loc = rec.get("geometry", {}).get("location", {})
-        lat = loc.get("lat", 0)
-        lng = loc.get("lng", 0)
-        dist = _haversine_m(user_lat, user_lng, lat, lng) if (user_lat and user_lng) else 0
+    for rank, rec in enumerate(inp.recommendations[:3], 1):
+        dist = (
+            _haversine_m(inp.user_lat, inp.user_lng, rec.lat, rec.lng)
+            if (inp.user_lat and inp.user_lng)
+            else 0
+        )
 
         card = {
             "rank": rank,
-            "name": rec.get("name", "Không rõ"),
-            "address": rec.get("vicinity", ""),
-            "rating": rec.get("rating"),
+            "name": rec.name,
+            "address": rec.vicinity,
+            "rating": rec.rating,
             "distance": _distance_text(dist),
             "walk_time": _walk_time(dist),
-            "reason": rec.get("reason", ""),
-            "confidence": rec.get("confidence", "high"),
-            "maps_link": _maps_link(lat, lng),
-            "warning": rec.get("warning"),
-            "thumbnail": rec.get("thumbnail"),
+            "reason": rec.reason,
+            "confidence": rec.confidence,
+            "maps_link": _maps_link(rec.lat, rec.lng),
+            "warning": rec.warning,
+            "thumbnail": rec.thumbnail,
         }
         cards.append(card)
 
-        # Text format
         emoji_rank = ["①", "②", "③"][rank - 1]
         confidence_badge = ""
-        if card["confidence"] == "low":
+        if rec.confidence == "low":
             confidence_badge = " ⚠️ Review cũ/ít"
-        elif card["confidence"] == "medium":
+        elif rec.confidence == "medium":
             confidence_badge = " ℹ️ Cần xác nhận"
 
         line = (
