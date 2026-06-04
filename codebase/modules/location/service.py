@@ -144,15 +144,59 @@ class LocationService:
     # ── 1. Vị trí ─────────────────────────────────────────────────────────────
 
     def get_location(self, lat: float = None, lng: float = None) -> Location:
-        """Auto-detect qua IP, hoặc nhận lat/lng trực tiếp."""
-        ip_loc = self._detect_by_ip()
+        """
+        Trả về Location với lat/lng và tên thành phố.
+
+        - Có lat/lng (GPS thật từ browser/app):
+            → Reverse geocode qua Nominatim để lấy tên thành phố chính xác.
+        - Không có lat/lng:
+            → Tự detect qua IP (ip-api.com). Nhanh nhưng sai ~1–50km.
+        """
         if lat is not None and lng is not None:
-            return Location(lat=lat, lng=lng, city=ip_loc.city,
-                            province=ip_loc.province,
-                            display_name=ip_loc.display_name, source="gps")
-        return ip_loc
+            return self._reverse_geocode(lat, lng)
+        return self._detect_by_ip()
+
+    # Tiền tố hành chính VN cần bỏ để lấy đúng tên thành phố / tỉnh
+    _VN_PREFIXES = [
+        "Phường ", "Xã ", "Thị trấn ", "Thị xã ",
+        "Thành phố ", "Quận ", "Huyện ", "Tỉnh ",
+    ]
+
+    def _strip_vn_prefix(self, s: str) -> str:
+        for prefix in self._VN_PREFIXES:
+            if s.startswith(prefix):
+                return s[len(prefix):]
+        return s
+
+    def _reverse_geocode(self, lat: float, lng: float) -> Location:
+        """
+        Chuyển GPS coordinates → tên thành phố bằng Nominatim (OSM).
+        Miễn phí, không cần API key. Giới hạn 1 req/giây.
+        """
+        resp = httpx.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params={"lat": lat, "lon": lng, "format": "json",
+                    "accept-language": "vi"},
+            headers={"User-Agent": "AI-Local-Guide-Hackathon/1.0"},
+            timeout=8.0,
+        )
+        resp.raise_for_status()
+        addr = resp.json().get("address", {})
+
+        raw_city = (addr.get("city") or addr.get("town") or addr.get("village")
+                    or addr.get("county") or addr.get("state_district")
+                    or addr.get("state") or "Không xác định")
+        raw_province = addr.get("state") or addr.get("province") or raw_city
+
+        city     = self._strip_vn_prefix(raw_city)
+        province = self._strip_vn_prefix(raw_province)
+        display  = f"{city}, {province}" if city != province and province else city
+
+        return Location(lat=lat, lng=lng, city=city, province=province,
+                        display_name=display, source="gps")
 
     def _detect_by_ip(self) -> Location:
+        """Phát hiện vị trí từ IP public — nhanh nhưng chỉ chính xác ở cấp thành phố."""
         resp = httpx.get(
             "http://ip-api.com/json/",
             params={"lang": "vi", "fields": "status,message,lat,lon,city,regionName"},
