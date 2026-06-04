@@ -1,0 +1,84 @@
+# starter_v0 — tool declarations cho AI Local Food Guide.
+# Tên tool phải sync across:
+#   this file  ->  tools/__init__.py (TOOL_FUNCTIONS)  ->  data/eval_base.json
+tools:
+  # ---------------- Core tools ----------------
+  - name: clarify
+    description: >
+      Hỏi người dùng để thu thập thông tin hoặc xác nhận hành động.
+      Dùng khi: (1) cần hỏi MCQ về bữa ăn, (2) thiếu vị trí GPS,
+      (3) cần xác nhận trước khi mở Google Maps.
+    parameters:
+      type: object
+      properties:
+        question: {type: string, default: "", description: "Câu hỏi gửi người dùng."}
+        response_type:
+          type: string
+          enum: [text, yes_no, choice]
+          default: "text"
+          description: "'choice' cho MCQ, 'text' cho hỏi tự do, 'yes_no' cho xác nhận."
+        options:
+          type: array
+          default: []
+          items: {type: string}
+          description: "Các lựa chọn nếu response_type là 'choice'."
+      required: [question]
+
+  - name: search_nearby
+    description: >
+      Tìm quán ăn gần vị trí người dùng. Gọi tool này sau khi đã có đủ thông tin
+      từ MCQ và tọa độ GPS. Trả về danh sách quán với tên, rating, địa chỉ, khoảng cách.
+    parameters:
+      type: object
+      properties:
+        lat: {type: number, description: "Vĩ độ GPS của người dùng."}
+        lng: {type: number, description: "Kinh độ GPS của người dùng."}
+        radius: {type: integer, default: 500, description: "Bán kính tìm kiếm (mét). Mở rộng nếu kết quả ít."}
+        keyword: {type: string, default: "restaurant", description: "Từ khóa bổ sung (ví dụ: 'chay', 'hải sản', 'phở')."}
+        meal_time: {type: string, default: "", description: "Bữa ăn: sáng/trưa/tối/khuya — dùng để lọc quán mở giờ đó."}
+      required: [lat, lng]
+
+  - name: get_reviews
+    description: >
+      Lấy review và chi tiết của một quán ăn cụ thể theo place_id.
+      Dùng để đánh giá mức độ tin cậy (confidence) và sinh lý do gợi ý.
+    parameters:
+      type: object
+      properties:
+        place_id: {type: string, description: "ID quán ăn (từ kết quả search_nearby)."}
+        max_reviews: {type: integer, default: 5, description: "Số review tối đa cần lấy."}
+      required: [place_id]
+
+  - name: format_recommendations
+    description: >
+      Format danh sách quán gợi ý thành output đẹp cho người dùng.
+      Tính khoảng cách, tạo Google Maps link, format với emoji.
+      Gọi tool này ở bước cuối cùng sau khi đã chọn được 3 quán phù hợp.
+    parameters:
+      type: object
+      properties:
+        recommendations:
+          type: array
+          default: []
+          description: "Danh sách quán gợi ý (tối đa 3)"
+          items:
+            type: object
+            properties:
+              place_id: {type: string}
+              name: {type: string}
+              vicinity: {type: string}
+              rating: {type: number}
+              reason: {type: string, description: "Lý do 1 câu tại sao phù hợp"}
+              confidence: {type: string, enum: [high, medium, low]}
+              geometry:
+                type: object
+                properties:
+                  location:
+                    type: object
+                    properties:
+                      lat: {type: number}
+                      lng: {type: number}
+              warning: {type: string, description: "Cảnh báo nếu có (review cũ, quán có thể đóng)"}
+        user_lat: {type: number, description: "Vĩ độ người dùng (để tính khoảng cách)."}
+        user_lng: {type: number, description: "Kinh độ người dùng (để tính khoảng cách)."}
+      required: [recommendations]
