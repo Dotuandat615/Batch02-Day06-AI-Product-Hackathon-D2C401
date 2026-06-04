@@ -21,7 +21,7 @@ tools:
           type: array
           default: []
           items: {type: string}
-          description: "Các lựa chọn nếu response_type là 'choice'."
+          description: "Các câu trả lời ngắn (VD: 'Đồ nước', 'Cơm') để user chọn bấm nút. TUYỆT ĐỐI KHÔNG điền câu hỏi vào mảng này."
       required: [question]
 
   - name: search_nearby_restaurants
