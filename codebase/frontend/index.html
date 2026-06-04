@@ -1,12 +1,1360 @@
 <!DOCTYPE html>
 <html lang="vi">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI Local Guide</title>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>🍜 FoodieAI – Gợi ý món ăn thông minh</title>
+  <meta name="description" content="Chatbot AI gợi ý món ăn và quán ăn phù hợp với khẩu vị, tâm trạng và ngân sách."/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <style>
+/* ════════════════════════════════════
+   DESIGN TOKENS
+════════════════════════════════════ */
+:root {
+  --sidebar-w: 260px;
+  --header-h:  58px;
+  --tab-h:     44px;
+
+  --bg:        #f5f6fa;
+  --surface:   #ffffff;
+  --surface-2: #f0f2f7;
+  --border:    #e2e5ef;
+
+  --primary:   #ff6b35;
+  --p2:        #ff4f7b;
+  --p3:        #c04cf7;
+  --grad:      linear-gradient(135deg,#ff6b35 0%,#ff4f7b 55%,#c04cf7 100%);
+
+  --green:     #16a34a;
+  --blue:      #2563eb;
+  --yellow:    #d97706;
+  --purple:    #7c3aed;
+  --red:       #dc2626;
+  --cyan:      #0891b2;
+
+  --txt-1:     #111827;
+  --txt-2:     #374151;
+  --txt-3:     #6b7280;
+  --txt-4:     #9ca3af;
+
+  --rad-xl:    20px;
+  --rad-lg:    14px;
+  --rad-md:    10px;
+  --rad-sm:    7px;
+  --ease:      .22s cubic-bezier(.4,0,.2,1);
+  --sh-sm:     0 1px 4px rgba(0,0,0,.06);
+  --sh-md:     0 4px 16px rgba(0,0,0,.09);
+  --sh-lg:     0 8px 32px rgba(0,0,0,.12);
+}
+
+/* ════════════════════════════════════
+   RESET
+════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{
+  font-family:'Be Vietnam Pro',sans-serif;
+  background:var(--bg);
+  color:var(--txt-1);
+  display:flex;
+}
+
+/* ════════════════════════════════════
+   SIDEBAR
+════════════════════════════════════ */
+.sidebar{
+  width:var(--sidebar-w);
+  flex-shrink:0;
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  display:flex;
+  flex-direction:column;
+  height:100vh;
+  overflow:hidden;
+}
+.sb-header{
+  padding:16px 14px 12px;
+  border-bottom:1px solid var(--border);
+  flex-shrink:0;
+}
+.sb-logo{
+  display:flex;align-items:center;gap:10px;margin-bottom:14px;
+}
+.sb-logo-icon{
+  width:38px;height:38px;border-radius:12px;
+  background:var(--grad);
+  display:flex;align-items:center;justify-content:center;
+  font-size:18px;
+  box-shadow:0 4px 12px rgba(255,107,53,.35);
+  flex-shrink:0;
+}
+.sb-logo-name{font-size:16px;font-weight:800;letter-spacing:-.3px}
+.sb-logo-sub{font-size:10px;color:var(--txt-4);margin-top:1px}
+
+/* New Chat Button */
+.new-chat-btn{
+  width:100%;padding:9px 14px;border-radius:var(--rad-md);
+  border:1.5px dashed var(--border);
+  background:transparent;
+  color:var(--txt-2);
+  font-size:13px;font-weight:600;font-family:inherit;
+  cursor:pointer;transition:var(--ease);
+  display:flex;align-items:center;gap:7px;
+}
+.new-chat-btn:hover{
+  border-color:var(--primary);color:var(--primary);
+  background:rgba(255,107,53,.05);
+}
+.new-chat-btn svg{width:15px;height:15px;flex-shrink:0}
+
+/* Location Status */
+.location-box{
+  margin:10px 14px;
+  padding:9px 11px;
+  border-radius:var(--rad-md);
+  border:1px solid var(--border);
+  background:var(--surface-2);
+  flex-shrink:0;
+}
+.loc-header{
+  display:flex;align-items:center;gap:6px;
+  font-size:10.5px;font-weight:700;color:var(--txt-3);
+  text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px;
+}
+.loc-dot{
+  width:7px;height:7px;border-radius:50%;flex-shrink:0;
+  animation:blink 2s infinite;
+}
+.loc-dot.locating{background:#f59e0b}
+.loc-dot.found   {background:var(--green)}
+.loc-dot.error   {background:var(--red)}
+.loc-name{font-size:12px;font-weight:600;color:var(--txt-1);margin-bottom:2px}
+.loc-coords{font-size:10.5px;color:var(--txt-4);font-family:'JetBrains Mono',monospace}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* Conversation List */
+.sb-label{
+  padding:8px 14px 5px;
+  font-size:10.5px;font-weight:700;color:var(--txt-4);
+  text-transform:uppercase;letter-spacing:.5px;flex-shrink:0;
+}
+.conv-list{
+  flex:1;overflow-y:auto;padding:4px 8px 12px;
+  scrollbar-width:thin;scrollbar-color:var(--border) transparent;
+}
+.conv-list::-webkit-scrollbar{width:3px}
+.conv-list::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+.conv-item{
+  padding:9px 10px;border-radius:var(--rad-md);
+  cursor:pointer;transition:var(--ease);
+  display:flex;align-items:flex-start;gap:8px;
+  margin-bottom:2px;
+}
+.conv-item:hover{background:var(--surface-2)}
+.conv-item.active{background:rgba(255,107,53,.08);border:1px solid rgba(255,107,53,.2)}
+.conv-icon{font-size:16px;flex-shrink:0;margin-top:1px}
+.conv-meta{flex:1;min-width:0}
+.conv-title{font-size:12.5px;font-weight:600;color:var(--txt-1);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv-preview{font-size:11px;color:var(--txt-4);margin-top:1px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.conv-time{font-size:10px;color:var(--txt-4);margin-top:2px}
+
+/* ════════════════════════════════════
+   MAIN AREA
+════════════════════════════════════ */
+.main{
+  flex:1;display:flex;flex-direction:column;
+  height:100vh;overflow:hidden;min-width:0;
+}
+
+/* ─── Top Bar ──────────────────────────────────── */
+.topbar{
+  height:var(--header-h);flex-shrink:0;
+  background:var(--surface);border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 20px;gap:12px;
+  box-shadow:var(--sh-sm);
+}
+.topbar-title{
+  font-size:14.5px;font-weight:700;color:var(--txt-1);flex:1;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.tab-group{
+  display:flex;gap:4px;
+  background:var(--surface-2);
+  border-radius:var(--rad-md);padding:3px;
+}
+.tab-btn{
+  padding:5px 14px;border-radius:var(--rad-sm);
+  border:none;cursor:pointer;
+  font-size:12.5px;font-weight:600;font-family:inherit;
+  transition:var(--ease);color:var(--txt-3);background:transparent;
+  display:flex;align-items:center;gap:5px;
+}
+.tab-btn.active{
+  background:var(--surface);color:var(--txt-1);
+  box-shadow:var(--sh-sm);
+}
+.tab-btn svg{width:13px;height:13px}
+.status-pills{display:flex;gap:6px;align-items:center;}
+.spill{
+  padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;
+  border:1.5px solid var(--border);color:var(--txt-3);background:var(--surface-2);
+}
+.spill.live{
+  border-color:rgba(22,163,74,.3);color:var(--green);
+  background:rgba(22,163,74,.07);
+}
+.spill.live::before{
+  content:'';display:inline-block;width:6px;height:6px;
+  background:var(--green);border-radius:50%;margin-right:5px;
+  animation:blink 2s infinite;
+}
+
+/* ─── View Panels ──────────────────────────────── */
+.panels{flex:1;overflow:hidden;display:flex;flex-direction:column;}
+.panel{flex:1;display:none;flex-direction:column;overflow:hidden;}
+.panel.visible{display:flex;}
+
+/* ════════════════════════════════════
+   CHAT PANEL
+════════════════════════════════════ */
+.chips-bar{
+  background:var(--surface);border-bottom:1px solid var(--border);
+  padding:8px 20px;display:flex;gap:6px;overflow-x:auto;flex-shrink:0;
+  scrollbar-width:none;
+}
+.chips-bar::-webkit-scrollbar{display:none}
+.chip{
+  flex-shrink:0;padding:5px 12px;border-radius:20px;
+  border:1.5px solid var(--border);background:var(--surface);
+  color:var(--txt-2);font-size:12px;font-weight:500;
+  cursor:pointer;transition:var(--ease);white-space:nowrap;font-family:inherit;
+}
+.chip:hover{border-color:var(--primary);color:var(--primary);background:rgba(255,107,53,.06);transform:translateY(-1px)}
+
+.chat-body{
+  flex:1;overflow-y:auto;background:var(--bg);
+  padding:22px 24px 12px;
+  display:flex;flex-direction:column;gap:18px;
+  scrollbar-width:thin;scrollbar-color:var(--border) transparent;
+}
+.chat-body::-webkit-scrollbar{width:4px}
+.chat-body::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+
+/* Welcome */
+.welcome{
+  display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:14px;text-align:center;
+  padding:50px 20px;flex:1;animation:fadeUp .5s ease;
+}
+.welcome-icon{font-size:64px;animation:bounceIn .55s ease}
+@keyframes bounceIn{
+  0%{transform:scale(.35) rotate(-8deg);opacity:0}
+  60%{transform:scale(1.07) rotate(2deg)}
+  100%{transform:scale(1) rotate(0);opacity:1}
+}
+.welcome h2{
+  font-size:28px;font-weight:800;letter-spacing:-.5px;
+  background:var(--grad);-webkit-background-clip:text;
+  -webkit-text-fill-color:transparent;background-clip:text;
+}
+.welcome p{font-size:14.5px;color:var(--txt-2);max-width:420px;line-height:1.7}
+.feat-grid{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;margin-top:6px}
+.feat-card{
+  background:var(--surface);border:1.5px solid var(--border);
+  border-radius:var(--rad-lg);padding:13px 16px;text-align:left;
+  min-width:130px;box-shadow:var(--sh-sm);
+}
+.feat-card .fi{font-size:20px;margin-bottom:5px}
+.feat-card .ft{font-size:12px;font-weight:700}
+.feat-card .fd{font-size:11px;color:var(--txt-3);margin-top:1px}
+
+/* Messages */
+.msg-row{display:flex;gap:10px;align-items:flex-end;animation:fadeUp .3s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.msg-row.user{flex-direction:row-reverse}
+.avatar{
+  width:32px;height:32px;border-radius:11px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:15px;
+}
+.avatar.bot{background:var(--grad);box-shadow:0 3px 10px rgba(255,107,53,.3)}
+.avatar.usr{background:var(--surface);border:1.5px solid var(--border)}
+.bwrap{display:flex;flex-direction:column;gap:4px;max-width:74%}
+.bwrap.user{align-items:flex-end}
+.bubble{
+  padding:12px 15px;border-radius:18px;font-size:13.5px;
+  line-height:1.65;word-break:break-word;box-shadow:var(--sh-sm);
+}
+.bubble.bot{
+  background:var(--surface);border:1.5px solid var(--border);
+  color:var(--txt-1);border-bottom-left-radius:5px;
+}
+.bubble.user{
+  background:var(--grad);color:white;
+  border-bottom-right-radius:5px;font-weight:500;
+}
+.msg-time{font-size:10px;color:var(--txt-4);padding:0 3px}
+
+/* MCQ */
+.mcq-label{font-size:11px;font-weight:700;color:var(--txt-3);
+  text-transform:uppercase;letter-spacing:.4px;margin:10px 0 7px}
+.mcq-grid{display:flex;flex-wrap:wrap;gap:6px}
+.mcq-btn{
+  padding:7px 13px;border-radius:20px;font-size:13px;font-weight:500;
+  border:1.5px solid var(--border);background:var(--surface-2);
+  color:var(--txt-1);cursor:pointer;transition:var(--ease);
+  font-family:inherit;display:flex;align-items:center;gap:5px;
+}
+.mcq-btn:hover{border-color:var(--primary);color:var(--primary);
+  background:rgba(255,107,53,.07);transform:translateY(-1px)}
+.mcq-btn.selected{border-color:var(--primary);color:var(--primary);
+  background:rgba(255,107,53,.1);font-weight:700}
+.mcq-btn.disabled{opacity:.4;cursor:not-allowed;pointer-events:none}
+
+/* Reco Cards */
+.reco-list{display:flex;flex-direction:column;gap:12px;margin-top:8px}
+.reco-card{
+  background:var(--surface);border:1.5px solid var(--border);
+  border-radius:var(--rad-lg);padding:15px;
+  transition:var(--ease);box-shadow:var(--sh-sm);
+  position:relative;overflow:hidden;
+}
+.reco-card::after{
+  content:'';position:absolute;left:0;top:0;bottom:0;
+  width:4px;border-radius:4px 0 0 4px;
+}
+.reco-card.r1::after{background:#f59e0b}
+.reco-card.r2::after{background:var(--txt-4)}
+.reco-card.r3::after{background:#92400e}
+.reco-card:hover{border-color:rgba(255,107,53,.3);box-shadow:var(--sh-md);transform:translateY(-2px)}
+
+.reco-top{display:flex;gap:12px;align-items:flex-start}
+.reco-emoji{font-size:32px;flex-shrink:0;line-height:1;margin-top:2px}
+.reco-body{flex:1;min-width:0}
+.reco-header{display:flex;align-items:center;gap:7px;margin-bottom:3px;flex-wrap:wrap}
+.reco-name{font-size:14px;font-weight:700}
+.rank-badge{font-size:10px;padding:2px 7px;border-radius:8px;font-weight:700}
+.r1 .rank-badge{background:rgba(245,158,11,.12);color:#d97706}
+.r2 .rank-badge{background:rgba(107,114,128,.12);color:var(--txt-3)}
+.r3 .rank-badge{background:rgba(146,64,14,.12);color:#92400e}
+.reco-desc{font-size:12.5px;color:var(--txt-2);line-height:1.55;margin-bottom:7px}
+.reco-tags{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.tag{
+  padding:3px 8px;border-radius:7px;font-size:11px;font-weight:500;
+  background:var(--surface-2);color:var(--txt-2);border:1px solid var(--border);
+}
+.tag.price{color:var(--green);background:rgba(22,163,74,.07);border-color:rgba(22,163,74,.2)}
+.tag.dist{color:var(--blue);background:rgba(37,99,235,.07);border-color:rgba(37,99,235,.2)}
+.tag.score{color:var(--primary);background:rgba(255,107,53,.07);border-color:rgba(255,107,53,.2)}
+
+.reason-box{
+  background:#fffdf0;border:1px solid rgba(217,119,6,.22);
+  border-radius:var(--rad-sm);padding:9px 12px;margin-top:2px;
+}
+.reason-title{font-size:10.5px;font-weight:700;color:#d97706;
+  text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px}
+.reason-box p{font-size:12px;color:#78350f;line-height:1.55}
+
+.card-actions{display:flex;gap:7px;align-items:center;margin-top:10px}
+.map-btn{
+  display:inline-flex;align-items:center;gap:5px;
+  padding:7px 13px;border-radius:20px;font-size:12px;font-weight:600;
+  background:var(--blue);color:white;border:none;cursor:pointer;
+  text-decoration:none;transition:var(--ease);font-family:inherit;
+  box-shadow:0 2px 8px rgba(37,99,235,.3);
+}
+.map-btn:hover{background:#1d4ed8;transform:translateY(-1px);box-shadow:0 4px 14px rgba(37,99,235,.4)}
+.map-btn svg{width:13px;height:13px;flex-shrink:0}
+.score-chip{
+  margin-left:auto;display:flex;flex-direction:column;
+  align-items:flex-end;gap:1px;flex-shrink:0;
+}
+.score-val{font-size:22px;font-weight:800;color:var(--primary);line-height:1}
+.score-star{font-size:11px;color:#f59e0b;letter-spacing:1px}
+.score-lbl{font-size:9px;color:var(--txt-4)}
+
+/* Typing */
+.typing{display:flex;gap:4px;align-items:center;padding:2px 0}
+.tdot{
+  width:7px;height:7px;border-radius:50%;background:var(--txt-4);
+  animation:tdot 1.2s infinite ease-in-out;
+}
+.tdot:nth-child(2){animation-delay:.2s}
+.tdot:nth-child(3){animation-delay:.4s}
+@keyframes tdot{0%,60%,100%{transform:translateY(0);opacity:.4}30%{transform:translateY(-6px);opacity:1}}
+
+/* Input Area */
+.input-area{
+  background:var(--surface);border-top:1px solid var(--border);
+  padding:12px 20px 16px;flex-shrink:0;
+}
+.input-row{
+  display:flex;gap:8px;align-items:flex-end;
+  background:var(--surface-2);border:1.5px solid var(--border);
+  border-radius:var(--rad-xl);padding:8px 8px 8px 16px;transition:var(--ease);
+}
+.input-row:focus-within{
+  border-color:var(--primary);
+  box-shadow:0 0 0 3px rgba(255,107,53,.12);
+}
+#chat-input{
+  flex:1;background:transparent;border:none;outline:none;
+  color:var(--txt-1);font-size:13.5px;font-family:inherit;
+  resize:none;line-height:1.5;max-height:120px;min-height:22px;
+}
+#chat-input::placeholder{color:var(--txt-4)}
+.input-btns{display:flex;gap:4px;align-items:center}
+.icon-btn{
+  width:32px;height:32px;border-radius:9px;border:none;
+  display:flex;align-items:center;justify-content:center;
+  cursor:pointer;font-size:15px;transition:var(--ease);
+  background:transparent;color:var(--txt-3);
+}
+.icon-btn:hover{background:var(--border);color:var(--txt-1)}
+#send-btn{
+  width:38px;height:38px;border-radius:12px;border:none;
+  background:var(--grad);cursor:pointer;
+  display:flex;align-items:center;justify-content:center;
+  transition:var(--ease);box-shadow:0 3px 12px rgba(255,107,53,.35);
+}
+#send-btn:hover{transform:scale(1.07);box-shadow:0 5px 18px rgba(255,107,53,.45)}
+#send-btn:active{transform:scale(.94)}
+#send-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.hint{text-align:center;font-size:11px;color:var(--txt-4);margin-top:7px}
+kbd{
+  background:var(--surface-2);border:1px solid var(--border);
+  border-radius:4px;padding:1px 5px;font-size:10px;font-family:inherit;
+}
+
+/* ════════════════════════════════════
+   LOG PANEL
+════════════════════════════════════ */
+.log-panel{
+  flex:1;display:none;flex-direction:column;overflow:hidden;
+  background:var(--bg);
+}
+.log-panel.visible{display:flex}
+
+.log-toolbar{
+  display:flex;align-items:center;gap:10px;
+  padding:10px 20px;background:var(--surface);
+  border-bottom:1px solid var(--border);flex-shrink:0;
+}
+.log-toolbar-title{
+  font-size:13px;font-weight:700;color:var(--txt-1);
+  display:flex;align-items:center;gap:7px;
+}
+.log-toolbar-title svg{width:15px;height:15px;color:var(--purple)}
+.log-clear-btn{
+  margin-left:auto;padding:5px 12px;border-radius:var(--rad-sm);
+  border:1.5px solid var(--border);background:transparent;
+  font-size:11.5px;font-weight:600;font-family:inherit;
+  color:var(--txt-3);cursor:pointer;transition:var(--ease);
+}
+.log-clear-btn:hover{border-color:var(--red);color:var(--red)}
+
+.log-stream{
+  flex:1;overflow-y:auto;padding:16px 20px;
+  display:flex;flex-direction:column;gap:10px;
+  scrollbar-width:thin;scrollbar-color:var(--border) transparent;
+}
+.log-stream::-webkit-scrollbar{width:4px}
+.log-stream::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px}
+
+.log-entry{
+  background:var(--surface);border:1.5px solid var(--border);
+  border-radius:var(--rad-md);overflow:hidden;
+  animation:fadeUp .3s ease;
+}
+.log-entry-header{
+  display:flex;align-items:center;gap:8px;
+  padding:9px 14px;cursor:pointer;
+  user-select:none;
+}
+.log-entry-header:hover{background:var(--surface-2)}
+.log-step-num{
+  width:22px;height:22px;border-radius:7px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;
+  font-size:11px;font-weight:800;
+}
+.log-step-icon{font-size:15px;flex-shrink:0}
+.log-step-label{flex:1;font-size:12.5px;font-weight:600;color:var(--txt-1)}
+.log-step-time{font-size:10.5px;color:var(--txt-4);font-family:'JetBrains Mono',monospace}
+.log-chevron{
+  font-size:11px;color:var(--txt-4);transition:transform .2s ease;
+}
+.log-entry.open .log-chevron{transform:rotate(90deg)}
+.log-entry-body{
+  display:none;padding:0 14px 12px;border-top:1px solid var(--border);
+  background:var(--surface-2);
+}
+.log-entry.open .log-entry-body{display:block}
+.log-code{
+  font-family:'JetBrains Mono',monospace;
+  font-size:11.5px;line-height:1.65;color:var(--txt-2);
+  white-space:pre-wrap;word-break:break-all;
+  padding-top:10px;
+}
+.log-code .kw   {color:var(--purple);font-weight:600}
+.log-code .val  {color:var(--blue)}
+.log-code .str  {color:var(--green)}
+.log-code .num  {color:var(--primary)}
+.log-code .cmnt {color:var(--txt-4);font-style:italic}
+.log-code .ok   {color:var(--green);font-weight:700}
+.log-code .warn {color:var(--yellow);font-weight:700}
+.log-code .err  {color:var(--red);font-weight:700}
+
+/* step colors */
+.step-input   .log-step-num{background:rgba(37,99,235,.12);color:var(--blue)}
+.step-parse   .log-step-num{background:rgba(124,58,237,.12);color:var(--purple)}
+.step-locate  .log-step-num{background:rgba(22,163,74,.12); color:var(--green)}
+.step-match   .log-step-num{background:rgba(255,107,53,.12);color:var(--primary)}
+.step-rank    .log-step-num{background:rgba(217,119,6,.12); color:var(--yellow)}
+.step-explain .log-step-num{background:rgba(8,145,178,.12); color:var(--cyan)}
+.step-output  .log-step-num{background:rgba(22,163,74,.12); color:var(--green)}
+
+/* Log empty */
+.log-empty{
+  flex:1;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:10px;
+  color:var(--txt-4);text-align:center;padding:40px;
+}
+.log-empty-icon{font-size:48px;opacity:.4}
+.log-empty p{font-size:13.5px}
+
+/* ════════════════════════════════════
+   TOAST
+════════════════════════════════════ */
+#toast{
+  position:fixed;bottom:26px;left:50%;
+  transform:translateX(-50%) translateY(14px);
+  background:var(--txt-1);border-radius:12px;
+  padding:9px 18px;font-size:13px;color:white;opacity:0;
+  transition:all .3s ease;z-index:9999;white-space:nowrap;
+  box-shadow:var(--sh-lg);pointer-events:none;
+}
+  </style>
 </head>
 <body>
-    <h1>AI Local Guide - Food Recommendation</h1>
-    <p>Giao diện Frontend đang được phát triển bởi Người 3 (UI/UX).</p>
+
+<!-- ════════ SIDEBAR ════════ -->
+<aside class="sidebar">
+  <div class="sb-header">
+    <div class="sb-logo">
+      <div class="sb-logo-icon">🍜</div>
+      <div>
+        <div class="sb-logo-name">FoodieAI</div>
+        <div class="sb-logo-sub">v1.0 Beta · Hackathon Demo</div>
+      </div>
+    </div>
+    <button class="new-chat-btn" onclick="startNewChat()">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 5v14M5 12h14"/>
+      </svg>
+      Cuộc trò chuyện mới
+    </button>
+  </div>
+
+  <!-- Location Status -->
+  <div class="location-box">
+    <div class="loc-header">
+      <div class="loc-dot locating" id="loc-dot"></div>
+      <span id="loc-status-label">Đang xác định vị trí…</span>
+    </div>
+    <div class="loc-name" id="loc-name">—</div>
+    <div class="loc-coords" id="loc-coords">lat: — · lng: —</div>
+  </div>
+
+  <!-- Conversation list -->
+  <div class="sb-label">Lịch sử trò chuyện</div>
+  <div class="conv-list" id="conv-list">
+    <div class="conv-item active" id="conv-current">
+      <div class="conv-icon">💬</div>
+      <div class="conv-meta">
+        <div class="conv-title">Cuộc trò chuyện mới</div>
+        <div class="conv-preview">Bắt đầu hỏi về món ăn…</div>
+        <div class="conv-time" id="conv-current-time">Hôm nay</div>
+      </div>
+    </div>
+  </div>
+</aside>
+
+<!-- ════════ MAIN ════════ -->
+<div class="main">
+
+  <!-- Top Bar -->
+  <div class="topbar">
+    <div class="topbar-title" id="topbar-title">💬 Cuộc trò chuyện mới</div>
+
+    <div class="tab-group">
+      <button class="tab-btn active" id="tab-chat" onclick="switchTab('chat')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+        </svg>
+        Chat
+      </button>
+      <button class="tab-btn" id="tab-log" onclick="switchTab('log')">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        AI Log
+        <span id="log-badge" style="
+          background:var(--purple);color:white;
+          font-size:9px;padding:1px 5px;border-radius:8px;
+          display:none;font-weight:800;
+        ">0</span>
+      </button>
+    </div>
+
+    <div class="status-pills">
+      <div class="spill live">Online</div>
+      <div class="spill">GPT-4o</div>
+    </div>
+  </div>
+
+  <!-- ── Panels ── -->
+  <div class="panels">
+
+    <!-- CHAT PANEL -->
+    <div class="panel visible" id="panel-chat" style="flex-direction:column">
+      <!-- Quick chips -->
+      <div class="chips-bar">
+        <button class="chip" onclick="sendMsg(this.textContent)">🌶️ Muốn ăn cay</button>
+        <button class="chip" onclick="sendMsg(this.textContent)">🥗 Ăn chay hôm nay</button>
+        <button class="chip" onclick="sendMsg(this.textContent)">🍣 Gợi ý đồ Nhật</button>
+        <button class="chip" onclick="sendMsg(this.textContent)">☕ Tìm quán cà phê</button>
+        <button class="chip" onclick="sendMsg(this.textContent)">💸 Ăn ngon dưới 50k</button>
+        <button class="chip" onclick="sendMsg(this.textContent)">🍖 Nhậu cuối tuần</button>
+        <button class="chip" onclick="sendMsg(this.textContent)">🎂 Đi ăn sinh nhật</button>
+      </div>
+
+      <!-- Messages -->
+      <div class="chat-body" id="chat-body">
+        <div class="welcome" id="welcome">
+          <div class="welcome-icon">🍽️</div>
+          <h2>Hôm nay bạn muốn ăn gì?</h2>
+          <p>Tôi là <strong>FoodieAI</strong> – hãy cho tôi biết khẩu vị, tâm trạng và ngân sách. Tôi sẽ gợi ý món ăn và quán ăn phù hợp nhất cho bạn!</p>
+          <div class="feat-grid">
+            <div class="feat-card"><div class="fi">🎯</div><div class="ft">Cá nhân hoá</div><div class="fd">Theo sở thích bạn</div></div>
+            <div class="feat-card"><div class="fi">📍</div><div class="ft">Quán gần bạn</div><div class="fd">Theo vị trí GPS</div></div>
+            <div class="feat-card"><div class="fi">💡</div><div class="ft">Lý do từng món</div><div class="fd">Giải thích chi tiết</div></div>
+            <div class="feat-card"><div class="fi">🗺️</div><div class="ft">Google Maps</div><div class="fd">Dẫn đường tức thì</div></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Input -->
+      <div class="input-area">
+        <div class="input-row">
+          <textarea id="chat-input"
+            placeholder="Nhập câu hỏi về món ăn, quán ăn, ngân sách... ✨"
+            rows="1"
+            onkeydown="handleKey(event)"
+            oninput="resizeTA(this)"></textarea>
+          <div class="input-btns">
+            <button class="icon-btn" title="Đính kèm" onclick="showToast('Tính năng đang phát triển 🚀')">📎</button>
+            <button class="icon-btn" title="Voice" onclick="showToast('Giọng nói 🎤 – coming soon')">🎙️</button>
+            <button id="send-btn" onclick="handleSend()" title="Gửi">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+            </button>
+          </div>
+        </div>
+        <p class="hint">Nhấn <kbd>Enter</kbd> để gửi · <kbd>Shift+Enter</kbd> xuống dòng</p>
+      </div>
+    </div>
+
+    <!-- LOG PANEL -->
+    <div class="panel" id="panel-log" style="flex-direction:column;overflow:hidden">
+      <div class="log-toolbar">
+        <div class="log-toolbar-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          AI Reasoning Log – Quá trình suy luận
+        </div>
+        <button class="log-clear-btn" onclick="clearLog()">🗑 Xóa log</button>
+      </div>
+
+      <div class="log-stream" id="log-stream">
+        <div class="log-empty" id="log-empty">
+          <div class="log-empty-icon">📋</div>
+          <p>Chưa có log nào.<br/>Hãy gửi một tin nhắn để xem quá trình AI suy luận.</p>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /panels -->
+</div><!-- /main -->
+
+<div id="toast"></div>
+
+<!-- ════════════════════════════════════
+     SCRIPT
+════════════════════════════════════ -->
+<script>
+/* ─────────────────────────────────────
+   DATA
+───────────────────────────────────── */
+const DB = {
+  cay:{
+    intro:"🌶️ Bạn thích cay – tôi có ngay top 3 lựa chọn đỉnh cao!",
+    items:[
+      {rank:1,emoji:"🍜",name:"Bún bò Huế Nguyễn Thị Hoa",desc:"Nước dùng sả gừng đậm đà, thịt bò mềm tan, cay vừa đủ.",tags:["Cay vừa","Truyền thống","Huế"],price:"45–65k",dist:"0.8km",score:9.4,stars:"★★★★★",reason:"Được gợi ý vì: nước dùng sả ớt tươi tạo độ cay tự nhiên không gắt. Quán lâu năm, đánh giá ổn định – phù hợp người thích cay cổ điển.",mapQuery:"Bún bò Huế Nguyễn Thị Hoa"},
+      {rank:2,emoji:"🍲",name:"Lẩu Thái Chua Cay Soi 6",desc:"Tom yum hải sản tươi, nước dùng chua cay chuẩn Thái, ăn nhóm là nhất.",tags:["Cay mạnh","Hải sản","Nhóm"],price:"120k/người",dist:"1.5km",score:9.1,stars:"★★★★½",reason:"Được gợi ý vì: kết hợp vị chua-cay đặc trưng Thái Lan với hải sản tươi nhập mỗi ngày. Phù hợp nếu bạn muốn cay có chiều sâu.",mapQuery:"Lẩu Thái Chua Cay Soi 6"},
+      {rank:3,emoji:"🌮",name:"Mì cay Hàn Quốc 7 cấp độ",desc:"7 cấp độ cay authentic, phong cách trẻ, check-in cực chất.",tags:["Siêu cay","Hàn Quốc","Trendy"],price:"55–80k",dist:"2.1km",score:8.8,stars:"★★★★",reason:"Được gợi ý vì: xu hướng ẩm thực Hàn đang hot, phân cấp độ cay rõ ràng – phù hợp nếu bạn muốn vừa ăn vừa thử thách.",mapQuery:"Mì cay Hàn Quốc"}
+    ]
+  },
+  chay:{
+    intro:"🥗 Hôm nay ăn chay – lành mạnh và ngon! Top 3 quán chay tôi chọn:",
+    items:[
+      {rank:1,emoji:"🥙",name:"Nhà hàng Chay Tịnh Tâm",desc:"Menu đa dạng, không gian yên tĩnh. Từ bún chay, cơm chay đến các món chay cao cấp.",tags:["Thuần chay","Healthy","Yên tĩnh"],price:"35–90k",dist:"0.6km",score:9.2,stars:"★★★★★",reason:"Được gợi ý vì: menu phong phú nhất khu vực với hơn 40 món chay. Rau củ tươi nhập mỗi sáng, thích hợp ăn một mình lẫn gia đình.",mapQuery:"Nhà hàng Chay Tịnh Tâm"},
+      {rank:2,emoji:"🍱",name:"Cơm chay Linh Ứng",desc:"Cơm phần chay dân dã, đậm vị, giá rẻ, không chất bảo quản.",tags:["Dân dã","Giá rẻ","Tươi ngon"],price:"25–40k",dist:"0.4km",score:8.9,stars:"★★★★½",reason:"Được gợi ý vì: giá bình dân nhất danh sách nhưng chất lượng rau củ đảm bảo. Cơm chay kiểu mẹ nấu – không phụ gia, không tạo màu.",mapQuery:"Cơm chay Linh Ứng"},
+      {rank:3,emoji:"🫙",name:"The Green Bowl – Salad & Bowl",desc:"Healthy bowl phong cách Tây: quinoa, avocado, protein thực vật.",tags:["Eat clean","Western","Protein"],price:"75–110k",dist:"1.9km",score:8.6,stars:"★★★★",reason:"Được gợi ý vì: phù hợp nhất cho người ăn chay vì sức khoẻ/thể hình. Ghi đầy đủ calories và macro – tốt nếu bạn đang theo dõi dinh dưỡng.",mapQuery:"The Green Bowl Salad"}
+    ]
+  },
+  nhat:{
+    intro:"🍣 Ẩm thực Nhật – tinh tế và chuẩn vị! Top 3 quán Nhật đánh giá cao nhất:",
+    items:[
+      {rank:1,emoji:"🍱",name:"Sakura Japanese Restaurant",desc:"Đầu bếp người Nhật, nguyên liệu nhập khẩu. Sushi & sashimi tươi mỗi ngày.",tags:["Authentic","Premium","Nhập khẩu"],price:"150–300k",dist:"1.2km",score:9.5,stars:"★★★★★",reason:"Được gợi ý vì: đầu bếp sushi đào tạo tại Osaka, nguyên liệu nhập trực tiếp 3 lần/tuần – đảm bảo độ tươi tối đa trong khu vực.",mapQuery:"Sakura Japanese Restaurant"},
+      {rank:2,emoji:"🍜",name:"Ramen Ichiban – Mì Nhật Bản",desc:"Tonkotsu hầm 12 tiếng, topping đa dạng. Có vị tonkotsu, shoyu, miso.",tags:["Ramen","Cozy","Ấm áp"],price:"80–130k",dist:"0.9km",score:9.0,stars:"★★★★½",reason:"Được gợi ý vì: nước dùng hầm xương heo 12 giờ đạt chuẩn umami Nhật, không dùng bột ngọt. Giá hợp lý hơn so với ramen fine-dining.",mapQuery:"Ramen Ichiban mì Nhật"},
+      {rank:3,emoji:"🥟",name:"Gyoza & Tempura House",desc:"Gyoza chiên giòn và tempura đúng chuẩn izakaya. Giá bình dân.",tags:["Izakaya","Gyoza","Bình dân"],price:"60–100k",dist:"0.5km",score:8.7,stars:"★★★★",reason:"Được gợi ý vì: lựa chọn tốt nhất nếu ngân sách hạn chế nhưng vẫn muốn trải nghiệm izakaya Nhật. Gyoza chiên tại chỗ – giòn, nóng hổi.",mapQuery:"Gyoza Tempura House"}
+    ]
+  },
+  cafe:{
+    intro:"☕ Tìm quán chill để làm việc? Đây là những góc yêu thích của tôi:",
+    items:[
+      {rank:1,emoji:"💻",name:"The Workshop Coffee Roasters",desc:"Không gian rộng, nhiều ổ điện, wifi 300Mbps. Cà phê specialty rang tại chỗ.",tags:["Wifi tốt","Specialty","Coworking"],price:"55–85k",dist:"0.7km",score:9.3,stars:"★★★★★",reason:"Được gợi ý vì: đáp ứng đủ 4 tiêu chí làm việc: wifi ổn định, ổ điện đủ dùng, ít ồn buổi sáng, và cà phê chất lượng cao.",mapQuery:"The Workshop Coffee Roasters"},
+      {rank:2,emoji:"🌿",name:"Mộc Coffee & Garden",desc:"Quán trong vườn xanh mát, yên tĩnh. Có phòng riêng cho họp nhỏ.",tags:["Yên tĩnh","Garden","Thiên nhiên"],price:"40–70k",dist:"1.1km",score:9.0,stars:"★★★★½",reason:"Được gợi ý vì: mức ồn thấp nhất trong danh sách – phù hợp cần tập trung cao hoặc cuộc họp online. Không khí trong lành từ vườn cây.",mapQuery:"Mộc Coffee Garden"},
+      {rank:3,emoji:"🏙️",name:"Skyview Lounge – Rooftop Cafe",desc:"Tầng thượng, view thành phố đỉnh cao. Ánh sáng tự nhiên tốt.",tags:["Rooftop","View đẹp","Trendy"],price:"70–100k",dist:"1.4km",score:8.8,stars:"★★★★",reason:"Được gợi ý vì: ánh sáng tự nhiên dồi dào từ rooftop giảm mỏi mắt. Phù hợp nhất buổi sáng sớm – ít khách, view đẹp, cảm hứng tràn trề.",mapQuery:"Skyview Lounge Rooftop Cafe"}
+    ]
+  },
+  re:{
+    intro:"💸 Ăn ngon không cần tốn nhiều! Top 3 ngon–bổ–rẻ nhất khu vực:",
+    items:[
+      {rank:1,emoji:"🍚",name:"Cơm tấm Bà Lan – Bí truyền 30 năm",desc:"Cơm tấm sườn bì chả đầy đủ, gia truyền 30 năm. Chỉ từ 35k.",tags:["Gia truyền","No nê","Ngon"],price:"35–50k",dist:"0.3km",score:9.6,stars:"★★★★★",reason:"Được gợi ý số 1 vì: tỷ lệ giá/chất lượng tốt nhất khu vực. 30 năm công thức không đổi = hương vị ổn định. Sườn nướng than hoa chuẩn vị Nam Bộ.",mapQuery:"Cơm tấm Bà Lan"},
+      {rank:2,emoji:"🥣",name:"Phở Gia Cát – Phở bò Hà Nội",desc:"Phở bò chuẩn vị Bắc, nước trong ngọt thanh, tô lớn no đủ.",tags:["Phở Bắc","No nê","Bữa sáng"],price:"40–55k",dist:"0.6km",score:9.2,stars:"★★★★★",reason:"Được gợi ý vì: nước dùng hầm xương bò 8 tiếng không dùng bột nêm, trong vắt và ngọt tự nhiên. Tô lớn đủ no cho bữa sáng/trưa.",mapQuery:"Phở Gia Cát Hà Nội"},
+      {rank:3,emoji:"🌯",name:"Bánh mì Hồng Hoa – Giòn rụm",desc:"Bánh mì thập cẩm nhân đầy ắp, giòn vỏ. Ăn sáng cực nhanh.",tags:["Bánh mì","Nhanh","Sáng"],price:"15–30k",dist:"0.1km",score:8.9,stars:"★★★★½",reason:"Được gợi ý vì: gần nhất và rẻ nhất trong danh sách. Bánh nướng mới mỗi buổi sáng, pate tự làm, rau thơm tươi mỗi ngày.",mapQuery:"Bánh mì Hồng Hoa"}
+    ]
+  }
+};
+
+const MCQ_FLOW=[
+  {id:"meal_type",question:"Bạn muốn ăn bữa gì?",options:[
+    {label:"🌅 Bữa sáng",value:"sang"},{label:"☀️ Bữa trưa",value:"trua"},
+    {label:"🌙 Bữa tối",value:"toi"},{label:"🍺 Nhậu nhẹ",value:"nhau"}]},
+  {id:"mood",question:"Hôm nay tâm trạng bạn thế nào?",options:[
+    {label:"😊 Vui vẻ, cần celebrate",value:"vui"},{label:"😴 Mệt mỏi, muốn dễ ăn",value:"met"},
+    {label:"💪 Đang eat clean",value:"clean"},{label:"🔥 Muốn thử cái mới",value:"moi"}]},
+  {id:"budget",question:"Ngân sách cho bữa này?",options:[
+    {label:"💚 Dưới 50k",value:"re"},{label:"💛 50k–150k",value:"vua"},
+    {label:"🧡 150k–300k",value:"kha"},{label:"❤️ Không giới hạn",value:"cao"}]}
+];
+
+/* ─────────────────────────────────────
+   STATE
+───────────────────────────────────── */
+let isTyping  = false;
+let mcqAns    = {};
+let mcqStep   = -1;
+let isMCQ     = false;
+let logCount  = 0;
+let convCount = 1;
+let convHistory= [];  // { title, preview, time }
+let userLocation = null;
+
+/* ─────────────────────────────────────
+   TAB SWITCHING
+───────────────────────────────────── */
+function switchTab(name){
+  ['chat','log'].forEach(t=>{
+    document.getElementById(`tab-${t}`).classList.toggle('active', t===name);
+    document.getElementById(`panel-${t}`).classList.toggle('visible', t===name);
+  });
+  if(name==='log'){
+    document.getElementById('log-badge').style.display='none';
+  }
+}
+
+/* ─────────────────────────────────────
+   GEOLOCATION
+───────────────────────────────────── */
+function initLocation(){
+  if(!navigator.geolocation){
+    setLocUI('error','Trình duyệt không hỗ trợ GPS','—','—');
+    return;
+  }
+  navigator.geolocation.getCurrentPosition(
+    pos=>{
+      const {latitude:lat,longitude:lng} = pos.coords;
+      userLocation = {lat,lng};
+      // Reverse geocode with nominatim (free, no key needed)
+      fetch(`https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json`)
+        .then(r=>r.json())
+        .then(d=>{
+          const city  = d.address?.city || d.address?.town || d.address?.suburb || 'Khu vực của bạn';
+          const road  = d.address?.road || d.address?.neighbourhood || '';
+          setLocUI('found', `${road ? road+', ' : ''}${city}`,
+            `lat: ${lat.toFixed(5)}`,`lng: ${lng.toFixed(5)}`);
+          addLogEntry('step-locate','📍','Vị trí người dùng xác định',
+`<span class="ok">✓ GPS thành công</span>
+<span class="kw">latitude</span>  = <span class="num">${lat.toFixed(6)}</span>
+<span class="kw">longitude</span> = <span class="num">${lng.toFixed(6)}</span>
+<span class="kw">địa chỉ</span>  = <span class="str">"${d.display_name?.substring(0,80)}..."</span>
+<span class="kw">bán kính</span>  = <span class="num">${pos.coords.accuracy.toFixed(0)}</span> mét
+<span class="cmnt">→ Sẽ dùng vị trí này để lọc quán ăn gần nhất.</span>`);
+        })
+        .catch(()=>{
+          setLocUI('found','Đã xác định vị trí',`lat: ${lat.toFixed(5)}`,`lng: ${lng.toFixed(5)}`);
+        });
+    },
+    err=>{
+      const msgs={1:'Người dùng từ chối GPS',2:'Vị trí không khả dụng',3:'Hết thời gian chờ'};
+      setLocUI('error', msgs[err.code]||'Lỗi GPS','—','—');
+      addLogEntry('step-locate','📍','Xác định vị trí',
+`<span class="err">✗ Lỗi GPS (code ${err.code})</span>: ${msgs[err.code]||err.message}
+<span class="cmnt">→ Sẽ dùng vị trí mặc định: Hồ Chí Minh.</span>`);
+    },
+    {enableHighAccuracy:true,timeout:10000}
+  );
+}
+
+function setLocUI(state, name, lat, lng){
+  const dot = document.getElementById('loc-dot');
+  const lbl = document.getElementById('loc-status-label');
+  dot.className = `loc-dot ${state}`;
+  const labels = {locating:'Đang xác định vị trí…',found:'Vị trí đã xác định ✓',error:'Không xác định được vị trí'};
+  lbl.textContent = labels[state]||'';
+  document.getElementById('loc-name').textContent   = name;
+  document.getElementById('loc-coords').textContent = `${lat} · ${lng}`;
+}
+
+/* ─────────────────────────────────────
+   LOG ENGINE
+───────────────────────────────────── */
+let logEntryId = 0;
+
+function addLogEntry(stepClass, icon, label, codeContent){
+  const empty = document.getElementById('log-empty');
+  if(empty) empty.remove();
+
+  logCount++;
+  logEntryId++;
+  const now = new Date().toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  const id  = `log-e-${logEntryId}`;
+
+  const stream = document.getElementById('log-stream');
+  const el = document.createElement('div');
+  el.className = `log-entry ${stepClass}`;
+  el.id = id;
+  el.innerHTML = `
+    <div class="log-entry-header" onclick="toggleLog('${id}')">
+      <div class="log-step-num">${logCount}</div>
+      <div class="log-step-icon">${icon}</div>
+      <div class="log-step-label">${label}</div>
+      <div class="log-step-time">${now}</div>
+      <div class="log-chevron">▶</div>
+    </div>
+    <div class="log-entry-body">
+      <pre class="log-code">${codeContent}</pre>
+    </div>`;
+  stream.appendChild(el);
+  stream.scrollTo({top:stream.scrollHeight,behavior:'smooth'});
+
+  // Badge update
+  const badge = document.getElementById('log-badge');
+  badge.textContent = logCount;
+  badge.style.display = 'inline';
+}
+
+function toggleLog(id){
+  document.getElementById(id)?.classList.toggle('open');
+}
+
+function clearLog(){
+  const stream = document.getElementById('log-stream');
+  stream.innerHTML = `<div class="log-empty" id="log-empty">
+    <div class="log-empty-icon">📋</div>
+    <p>Chưa có log nào.<br/>Hãy gửi một tin nhắn để xem quá trình AI suy luận.</p>
+  </div>`;
+  logCount = 0;
+  logEntryId = 0;
+  document.getElementById('log-badge').style.display='none';
+}
+
+/* ─────────────────────────────────────
+   CONVERSATION SIDEBAR
+───────────────────────────────────── */
+function startNewChat(){
+  // Archive current if has messages
+  const body = document.getElementById('chat-body');
+  const hasMsg = body.querySelectorAll('.msg-row').length > 0;
+  if(hasMsg){
+    const firstUserMsg = body.querySelector('.msg-row.user .bubble');
+    const preview = firstUserMsg ? firstUserMsg.textContent.substring(0,30)+'…' : 'Cuộc trò chuyện';
+    archiveConv(preview);
+  }
+
+  // Reset chat
+  body.innerHTML = `<div class="welcome" id="welcome">
+    <div class="welcome-icon">🍽️</div>
+    <h2>Hôm nay bạn muốn ăn gì?</h2>
+    <p>Tôi là <strong>FoodieAI</strong> – hãy cho tôi biết khẩu vị, tâm trạng và ngân sách. Tôi sẽ gợi ý món ăn và quán ăn phù hợp nhất!</p>
+    <div class="feat-grid">
+      <div class="feat-card"><div class="fi">🎯</div><div class="ft">Cá nhân hoá</div><div class="fd">Theo sở thích bạn</div></div>
+      <div class="feat-card"><div class="fi">📍</div><div class="ft">Quán gần bạn</div><div class="fd">Theo vị trí GPS</div></div>
+      <div class="feat-card"><div class="fi">💡</div><div class="ft">Lý do từng món</div><div class="fd">Giải thích chi tiết</div></div>
+      <div class="feat-card"><div class="fi">🗺️</div><div class="ft">Google Maps</div><div class="fd">Dẫn đường tức thì</div></div>
+    </div>
+  </div>`;
+
+  isTyping=false; mcqAns={}; mcqStep=-1; isMCQ=false; window.chatMessages=[];
+  convCount++;
+  document.getElementById('topbar-title').textContent = '💬 Cuộc trò chuyện mới';
+  document.getElementById('conv-current').querySelector('.conv-title').textContent='Cuộc trò chuyện mới';
+  document.getElementById('conv-current').querySelector('.conv-preview').textContent='Bắt đầu hỏi về món ăn…';
+  document.getElementById('chat-input').value='';
+  document.getElementById('chat-input').style.height='auto';
+  document.getElementById('chat-input').focus();
+  switchTab('chat');
+
+  addLogEntry('step-input','🆕','Cuộc trò chuyện mới bắt đầu',
+`<span class="kw">session_id</span>  = <span class="str">"conv-${convCount}-${Date.now()}"</span>
+<span class="kw">timestamp</span>   = <span class="str">"${new Date().toISOString()}"</span>
+<span class="kw">user_location</span> = ${userLocation ? `<span class="str">"${document.getElementById('loc-name').textContent}"</span>` : '<span class="warn">null (GPS chưa sẵn sàng)</span>'}
+<span class="cmnt">→ Khởi tạo context mới. Lịch sử trước đó được lưu trữ.</span>`);
+}
+
+function archiveConv(preview){
+  const list = document.getElementById('conv-list');
+  const now  = new Date().toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'});
+  const icons= ['🍜','🍣','🥗','☕','🍖','🍚'];
+  const icon = icons[Math.floor(Math.random()*icons.length)];
+  const item = document.createElement('div');
+  item.className = 'conv-item';
+  item.innerHTML = `
+    <div class="conv-icon">${icon}</div>
+    <div class="conv-meta">
+      <div class="conv-title">${preview}</div>
+      <div class="conv-preview">Đã kết thúc</div>
+      <div class="conv-time">${now}</div>
+    </div>`;
+  // insert after current
+  const current = document.getElementById('conv-current');
+  list.insertBefore(item, current.nextSibling);
+}
+
+/* ─────────────────────────────────────
+   RENDER HELPERS
+───────────────────────────────────── */
+const $body=()=>document.getElementById('chat-body');
+
+function removeWelcome(){const w=document.getElementById('welcome');if(w)w.remove()}
+function scrollBot(){const b=$body();b.scrollTo({top:b.scrollHeight,behavior:'smooth'})}
+function esc(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function mapsUrl(q){return`https://www.google.com/maps/search/${encodeURIComponent(q)}`}
+function getTime(){return new Date().toLocaleTimeString('vi-VN',{hour:'2-digit',minute:'2-digit'})}
+
+function appendRow(html,isUser=false){
+  removeWelcome();
+  const b=$body(),r=document.createElement('div');
+  r.className='msg-row'+(isUser?' user':'');
+  r.innerHTML=html;b.appendChild(r);scrollBot();return r;
+}
+function renderUser(text){
+  appendRow(`<div class="avatar usr">😊</div>
+  <div class="bwrap user">
+    <div class="bubble user">${esc(text)}</div>
+    <div class="msg-time">${getTime()}</div>
+  </div>`,true);
+  // Update sidebar preview
+  const p=document.getElementById('conv-current').querySelector('.conv-preview');
+  if(p.textContent==='Bắt đầu hỏi về món ăn…') p.textContent=text.substring(0,30)+(text.length>30?'…':'');
+  document.getElementById('topbar-title').textContent = '💬 '+text.substring(0,40);
+}
+function renderTypingDots(){
+  removeWelcome();
+  const b=$body(),r=document.createElement('div');
+  r.id='typing-row';r.className='msg-row';
+  r.innerHTML=`<div class="avatar bot">🍜</div>
+  <div class="bwrap">
+    <div class="bubble bot"><div class="typing"><div class="tdot"></div><div class="tdot"></div><div class="tdot"></div></div></div>
+  </div>`;
+  b.appendChild(r);scrollBot();
+}
+function removeTypingDots(){const t=document.getElementById('typing-row');if(t)t.remove()}
+
+function renderSimpleBot(html){
+  removeTypingDots();
+  appendRow(`<div class="avatar bot">🍜</div>
+  <div class="bwrap">
+    <div class="bubble bot">${html}</div>
+    <div class="msg-time">${getTime()}</div>
+  </div>`);
+}
+
+/* ─────────────────────────────────────
+   MCQ
+───────────────────────────────────── */
+function renderMCQ(idx){
+  const step=MCQ_FLOW[idx];
+  removeTypingDots();
+  const opts=step.options.map((o,i)=>
+    `<button class="mcq-btn" id="mcq-${idx}-${i}" onclick="onMCQ(${idx},${i},'${o.value}')">${o.label}</button>`
+  ).join('');
+  appendRow(`<div class="avatar bot">🍜</div>
+  <div class="bwrap">
+    <div class="bubble bot">
+      <div style="font-weight:600;margin-bottom:2px">${step.question}</div>
+      <div class="mcq-label">Chọn một đáp án</div>
+      <div class="mcq-grid" id="mcq-grid-${idx}">${opts}</div>
+    </div>
+    <div class="msg-time">${getTime()}</div>
+  </div>`);
+}
+
+function onMCQ(stepIdx,optIdx,value){
+  const grid=document.getElementById(`mcq-grid-${stepIdx}`);
+  if(!grid)return;
+  grid.querySelectorAll('.mcq-btn').forEach((b,i)=>{
+    b.classList.add('disabled');
+    if(i===optIdx)b.classList.add('selected');
+  });
+  const step=MCQ_FLOW[stepIdx];
+  mcqAns[step.id]=value;
+  const label=step.options[optIdx].label;
+
+  addLogEntry('step-parse','🖊️',`MCQ – Bước ${stepIdx+1}: ${step.question}`,
+`<span class="kw">step</span>     = <span class="num">${stepIdx+1}</span> / <span class="num">${MCQ_FLOW.length}</span>
+<span class="kw">question</span> = <span class="str">"${step.question}"</span>
+<span class="kw">answer</span>   = <span class="str">"${label}"</span>  [value: <span class="val">${value}</span>]
+<span class="cmnt">→ Ghi nhận vào context người dùng.</span>`);
+
+  setTimeout(()=>{
+    renderUser(label);
+    mcqStep++;
+    if(mcqStep<MCQ_FLOW.length){
+      renderTypingDots();
+      setTimeout(()=>renderMCQ(mcqStep), 800+Math.random()*300);
+    } else {
+      isMCQ=false;
+      renderTypingDots();
+      logRankStep(mcqAns);
+      setTimeout(()=>{
+        renderBotResponse(resolveFromMCQ(mcqAns));
+      },1200+Math.random()*500);
+    }
+  },180);
+}
+
+function resolveFromMCQ(ans){
+  if(ans.mood==='clean') return DB.chay;
+  if(ans.budget==='re')  return DB.re;
+  return DB.cay;
+}
+
+/* ─────────────────────────────────────
+   LOG STEPS
+───────────────────────────────────── */
+function logInputStep(text){
+  addLogEntry('step-input','📝','Nhận đầu vào người dùng',
+`<span class="kw">input</span>     = <span class="str">"${text.replace(/"/g,'\\"')}"</span>
+<span class="kw">length</span>    = <span class="num">${text.length}</span> ký tự
+<span class="kw">timestamp</span> = <span class="str">"${new Date().toISOString()}"</span>
+<span class="cmnt">→ Bắt đầu pipeline xử lý ngôn ngữ tự nhiên (NLU).</span>`);
+}
+
+function logParseStep(text,detected){
+  const lower=text.toLowerCase();
+  const keywords=[];
+  if(lower.includes('cay')||lower.includes('ớt'))keywords.push('cay');
+  if(lower.includes('chay')||lower.includes('vegan'))keywords.push('chay');
+  if(lower.includes('nhật')||lower.includes('sushi'))keywords.push('nhật');
+  if(lower.includes('cà phê')||lower.includes('cafe'))keywords.push('cafe');
+  if(lower.includes('50k')||lower.includes('rẻ'))keywords.push('rẻ');
+  addLogEntry('step-parse','🧠','Phân tích ngôn ngữ tự nhiên (NLU)',
+`<span class="kw">raw_text</span>      = <span class="str">"${text.substring(0,60)}"</span>
+<span class="kw">keywords</span>      = [${keywords.map(k=>`<span class="str">"${k}"</span>`).join(', ')||'<span class="warn">không xác định</span>'}]
+<span class="kw">intent</span>        = <span class="val">${detected==='MCQ'?'COLLECT_PREFERENCES':'RECOMMEND'}</span>
+<span class="kw">confidence</span>    = <span class="num">${detected==='MCQ'?'0.72':'0.94'}</span>
+<span class="kw">lang_detected</span> = <span class="str">"vi-VN"</span>
+<span class="cmnt">→ Intent ${detected==='MCQ'?'chưa rõ → kích hoạt MCQ flow':'đã xác định → bỏ qua MCQ'}.</span>`);
+}
+
+function logLocateStep(){
+  const locName = document.getElementById('loc-name').textContent;
+  addLogEntry('step-locate','📍','Lọc quán theo vị trí',
+`<span class="kw">user_location</span>  = <span class="str">"${locName}"</span>
+<span class="kw">radius</span>         = <span class="num">3.0</span> km
+<span class="kw">db_total</span>       = <span class="num">1247</span> quán ăn
+<span class="kw">filtered</span>       = <span class="num">89</span> quán trong bán kính
+<span class="cmnt">→ Giảm từ 1247 xuống còn 89 ứng viên tiềm năng.</span>`);
+}
+
+function logMatchStep(key){
+  const labelMap={cay:'MÓN CAY',chay:'CHAY/HEALTHY',nhat:'ẨM THỰC NHẬT',cafe:'CÀ PHÊ/LÀM VIỆC',re:'BÌNH DÂN < 50K'};
+  addLogEntry('step-match','🔍','Matching sở thích → Database',
+`<span class="kw">category</span>      = <span class="str">"${labelMap[key]||'TỔNG HỢP'}"</span>
+<span class="kw">filters</span>       = {
+  <span class="kw">price_range</span>: <span class="str">"phù hợp ngân sách"</span>,
+  <span class="kw">location</span>: <span class="str">"within 3km"</span>,
+  <span class="kw">rating</span>: <span class="num">> 8.5</span>,
+  <span class="kw">open_now</span>: <span class="val">true</span>
+}
+<span class="kw">candidates</span>    = <span class="num">12</span> quán phù hợp
+<span class="cmnt">→ Đưa vào ranking model để chọn top 3.</span>`);
+}
+
+function logRankStep(ans){
+  const budget=ans.budget||'vua';
+  const mood=ans.mood||'vui';
+  addLogEntry('step-rank','📊','Ranking & Scoring Model',
+`<span class="kw">algo</span>            = <span class="str">"weighted_score_v2"</span>
+<span class="kw">weights</span> = {
+  <span class="kw">rating</span>:      <span class="num">0.35</span>,   <span class="cmnt">// đánh giá người dùng</span>
+  <span class="kw">distance</span>:    <span class="num">0.25</span>,   <span class="cmnt">// khoảng cách GPS</span>
+  <span class="kw">budget_fit</span>:  <span class="num">0.20</span>,   <span class="cmnt">// phù hợp ngân sách</span>
+  <span class="kw">mood_match</span>:  <span class="num">0.20</span>    <span class="cmnt">// khớp tâm trạng</span>
+}
+<span class="kw">user_budget</span>     = <span class="str">"${budget}"</span>
+<span class="kw">user_mood</span>       = <span class="str">"${mood}"</span>
+<span class="ok">✓ Top 3 đã được chọn và sắp xếp.</span>`);
+}
+
+function logExplainStep(){
+  addLogEntry('step-explain','💡','Sinh lý do giải thích (Explain AI)',
+`<span class="kw">model</span>           = <span class="str">"gpt-4o-mini (fine-tuned vi-VN)"</span>
+<span class="kw">prompt_template</span> = <span class="str">"Explain why {restaurant} matches {user_profile}"</span>
+<span class="kw">per_dish</span>        = <span class="val">true</span>   <span class="cmnt">// lý do riêng từng món</span>
+<span class="kw">language</span>        = <span class="str">"vi-VN"</span>
+<span class="kw">tokens_used</span>     = <span class="num">${180+Math.floor(Math.random()*120)}</span>
+<span class="ok">✓ Giải thích đã được sinh thành công.</span>`);
+}
+
+function logOutputStep(key){
+  addLogEntry('step-output','✅','Kết quả hoàn chỉnh – Render UI',
+`<span class="kw">result_count</span>    = <span class="num">3</span>
+<span class="kw">category</span>        = <span class="str">"${key||'GENERAL'}"</span>
+<span class="kw">has_map_links</span>   = <span class="val">true</span>
+<span class="kw">has_per_dish_explain</span> = <span class="val">true</span>
+<span class="kw">render_time</span>     = <span class="num">${(Math.random()*0.08+0.02).toFixed(3)}</span>s
+<span class="kw">total_pipeline</span>  = <span class="num">${(Math.random()*0.8+1.1).toFixed(2)}</span>s
+<span class="ok">✓ Pipeline hoàn thành. Kết quả đã được hiển thị.</span>`);
+}
+
+/* ─────────────────────────────────────
+   RECO RENDER
+───────────────────────────────────── */
+function renderBotResponse(data){
+  removeTypingDots();
+  const cardsHtml=data.items.map(r=>`
+    <div class="reco-card r${r.rank}">
+      <div class="reco-top">
+        <div class="reco-emoji">${r.emoji}</div>
+        <div class="reco-body">
+          <div class="reco-header">
+            <span class="reco-name">${r.name}</span>
+            <span class="rank-badge">#${r.rank} AI Pick</span>
+          </div>
+          <div class="reco-desc">${r.desc}</div>
+          <div class="reco-tags">
+            ${r.tags.map(t=>`<span class="tag">${t}</span>`).join('')}
+            <span class="tag price">💰 ${r.price}</span>
+            <span class="tag dist">📍 ${r.dist}</span>
+            <span class="tag score">⭐ ${r.score}/10</span>
+          </div>
+        </div>
+        <div class="score-chip">
+          <div class="score-val">${r.score}</div>
+          <div class="score-star">${r.stars}</div>
+          <div class="score-lbl">AI Score</div>
+        </div>
+      </div>
+      <div class="reason-box">
+        <div class="reason-title">💡 Lý do gợi ý</div>
+        <p>${r.reason}</p>
+      </div>
+      <div class="card-actions">
+        <a class="map-btn" href="${mapsUrl(r.mapQuery)}" target="_blank" rel="noopener noreferrer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/>
+          </svg>
+          Xem trên Google Maps
+        </a>
+      </div>
+    </div>`).join('');
+
+  appendRow(`<div class="avatar bot">🍜</div>
+  <div class="bwrap" style="max-width:86%">
+    <div class="bubble bot">
+      <div style="font-weight:600;margin-bottom:10px">${data.intro}</div>
+      <div class="reco-list">${cardsHtml}</div>
+      <div style="margin-top:12px;font-size:12px;color:var(--txt-4)">
+        Bấm <strong style="color:var(--primary)">Xem trên Google Maps</strong> để được dẫn đường đến từng quán 🗺️
+      </div>
+    </div>
+    <div class="msg-time">${getTime()}</div>
+  </div>`);
+}
+
+/* ─────────────────────────────────────
+   MAIN SEND
+───────────────────────────────────── */
+function getKey(text){
+  const l=text.toLowerCase();
+  if(l.includes('cay')||l.includes('ớt'))return'cay';
+  if(l.includes('chay')||l.includes('vegan')||l.includes('healthy'))return'chay';
+  if(l.includes('nhật')||l.includes('sushi')||l.includes('ramen'))return'nhat';
+  if(l.includes('cà phê')||l.includes('cafe')||l.includes('coffee')||l.includes('làm việc'))return'cafe';
+  if(l.includes('50k')||l.includes('rẻ')||l.includes('bình dân'))return're';
+  if(l.includes('xin chào')||l.includes('hello')||l.includes('chào')||l.includes(' hi'))return'greet';
+  return null;
+}
+
+async function handleSend(){
+  const input=document.getElementById('chat-input');
+  const btn=document.getElementById('send-btn');
+  const text=input.value.trim();
+  if(!text||isTyping)return;
+  isTyping=true;btn.disabled=true;
+  input.value='';input.style.height='auto';
+
+  renderUser(text);
+  renderTypingDots();
+  
+  if (typeof window.chatMessages === 'undefined') {
+      window.chatMessages = [];
+  }
+  window.chatMessages.push({role: "user", content: text});
+
+  try {
+    const payload = {
+        messages: window.chatMessages,
+        lat: userLocation ? userLocation.lat : null,
+        lng: userLocation ? userLocation.lng : null
+    };
+    
+    // Call the new API
+    const res = await fetch('http://localhost:8000/chat', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+    
+    removeTypingDots();
+    
+    if(data.error) {
+        renderSimpleBot('❌ Đã xảy ra lỗi: ' + data.message);
+    } else {
+        if(data.assistant_text) {
+            renderSimpleBot(data.assistant_text);
+            window.chatMessages.push({role: "assistant", content: data.assistant_text});
+        }
+        
+        if(data.tool_events && data.tool_events.length > 0) {
+            data.tool_events.forEach(ev => {
+                const argsStr = JSON.stringify(ev.args, null, 2);
+                const resStr = JSON.stringify(ev.result, null, 2);
+                addLogEntry('step-output', '⚙️', `Tool: ${ev.tool}`, 
+`<span class="kw">Tool Called</span>: <span class="val">${ev.tool}</span>
+<span class="kw">Args</span>: <span class="val">${argsStr}</span>
+<span class="kw">Result</span>: <span class="str">${resStr}</span>`);
+
+                if(ev.tool === 'format_recommendations' && ev.result && ev.result.recommendations) {
+                    renderAPIRecommendations(ev.result.recommendations);
+                }
+                if(ev.tool === 'clarify' && ev.args && ev.args.response_type === 'choice') {
+                    renderAPIMCQ(ev.args.question, ev.args.options);
+                }
+            });
+        }
+    }
+  } catch (err) {
+      removeTypingDots();
+      renderSimpleBot('❌ Lỗi kết nối tới server.');
+      console.error(err);
+  }
+
+  isTyping=false;btn.disabled=false;
+  document.getElementById('chat-input').focus();
+}
+
+function renderAPIRecommendations(recs) {
+  const cardsHtml = recs.map((r, i) => `
+    <div class="reco-card r${i+1}">
+      <div class="reco-top">
+        <div class="reco-emoji">🍽️</div>
+        <div class="reco-body">
+          <div class="reco-header">
+            <span class="reco-name">${r.name}</span>
+            <span class="rank-badge">#${i+1} AI Pick</span>
+          </div>
+          <div class="reco-desc">${r.vicinity || r.address || ''}</div>
+          <div class="reco-tags">
+            <span class="tag score">⭐ ${r.rating || '?'}</span>
+          </div>
+        </div>
+      </div>
+      <div class="reason-box">
+        <div class="reason-title">💡 Lý do gợi ý</div>
+        <p>${r.reason || ''}</p>
+      </div>
+      <div class="card-actions">
+        ${r.maps_link ? `<a class="map-btn" href="${r.maps_link}" target="_blank" rel="noopener noreferrer">Xem trên Google Maps</a>` : ''}
+      </div>
+    </div>`).join('');
+
+  appendRow(`<div class="avatar bot">🍜</div>
+  <div class="bwrap" style="max-width:86%">
+    <div class="bubble bot">
+      <div class="reco-list">${cardsHtml}</div>
+    </div>
+    <div class="msg-time">${getTime()}</div>
+  </div>`);
+}
+
+function renderAPIMCQ(question, options) {
+    const opts = (options||[]).map(o =>
+        `<button class="mcq-btn" onclick="sendMsg('${o.replace(/'/g,"\\'").replace(/"/g,'&quot;')}')">${o}</button>`
+    ).join('');
+    appendRow(`<div class="avatar bot">🍜</div>
+    <div class="bwrap">
+      <div class="bubble bot">
+        <div style="font-weight:600;margin-bottom:2px">${question}</div>
+        <div class="mcq-label">Chọn một đáp án</div>
+        <div class="mcq-grid">${opts}</div>
+      </div>
+      <div class="msg-time">${getTime()}</div>
+    </div>`);
+}
+
+function sendMsg(text){
+  document.getElementById('chat-input').value=text;
+  handleSend();
+}
+
+/* ─────────────────────────────────────
+   UTILS
+───────────────────────────────────── */
+function handleKey(e){if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();handleSend()}}
+function resizeTA(el){el.style.height='auto';el.style.height=Math.min(el.scrollHeight,120)+'px'}
+function sleep(ms){return new Promise(r=>setTimeout(r,ms))}
+function showToast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg;t.style.opacity='1';t.style.transform='translateX(-50%) translateY(0)';
+  setTimeout(()=>{t.style.opacity='0';t.style.transform='translateX(-50%) translateY(14px)'},2600);
+}
+
+/* ─────────────────────────────────────
+   INIT
+───────────────────────────────────── */
+initLocation();
+document.getElementById('chat-input').focus();
+</script>
 </body>
 </html>

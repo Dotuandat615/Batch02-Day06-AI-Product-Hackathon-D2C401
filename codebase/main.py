@@ -1,55 +1,60 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from places_service import search_nearby, get_place_details, expand_radius_if_needed, build_maps_link
-from ai_service import get_recommendations
-from logger import log_request, log_places_result, log_ai_response, log_error
-from models import RecommendRequest
-
 import os
+from pathlib import Path
 
-app = FastAPI(title="AI Food Recommender")
+# Cấu hình log
+from logger import log_error
 
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+# Import cho Agent
+from models import ChatRequest
+from providers import make_provider
+from tools import load_tool_declarations, to_openai_tools
+from chat import run_model_tool_loop
 
-@app.post("/recommend")
-async def recommend(req: RecommendRequest):
-    log_request(req.mcq.model_dump(), req.lat, req.lng)
+app = FastAPI(title="AI Food Recommender Agent")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Khởi tạo Agent components (load 1 lần lúc startup)
+ROOT = Path(__file__).parent
+SYSTEM_PROMPT_PATH = ROOT / "artifacts" / "system_prompt.md"
+TOOLS_PATH = ROOT / "artifacts" / "tools.yaml"
+
+system_prompt = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
+tool_declarations = load_tool_declarations(TOOLS_PATH)
+openai_tools = to_openai_tools(tool_declarations)
+
+# Dùng provider anthropic (hoặc đổi thành gemini/openai nếu muốn)
+provider = make_provider("anthropic")
+default_model = getattr(provider, "default_model", None)
+
+@app.post("/chat")
+async def chat(req: ChatRequest):
     try:
-        # 1. Lấy danh sách quán, tự mở rộng bán kính nếu cần
-        radius = 500
-        places = []
-        while len(places) < 3 and radius <= 5000:
-            places = await search_nearby(req.lat, req.lng, radius)
-            new_radius = expand_radius_if_needed(places, radius)
-            if new_radius == radius:
-                break
-            radius = new_radius
-
-        log_places_result(len(places), radius)
-
-        if not places:
-            return {"error": "no_places_found", "message": "Không tìm thấy quán nào gần đây."}
-
-        # 2. Gọi AI
-        ai_result = await get_recommendations(req.mcq.model_dump(), places)
-        log_ai_response(ai_result.get("recommendations", []), ai_result.get("warning"))
-
-        # 3. Enrich với Maps link
-        for rec in ai_result["recommendations"]:
-            place = next((p for p in places if p["place_id"] == rec["place_id"]), None)
-            if place:
-                loc = place["geometry"]["location"]
-                rec["maps_link"] = build_maps_link(loc["lat"], loc["lng"])
-                rec["name"] = place.get("name")
-                rec["address"] = place.get("vicinity")
-                rec["rating"] = place.get("rating")
-
-        return ai_result
-
+        # Chuyển đổi tin nhắn cho provider
+        messages = [{"role": msg.role, "content": msg.content} for msg in req.messages]
+        
+        # Nếu có toạ độ, có thể nhúng vào prompt hệ thống
+        # Trong hackathon, system_prompt tĩnh là đủ, tool search_nearby sẽ hỏi nếu thiếu vị trí
+        
+        result = run_model_tool_loop(
+            provider=provider,
+            messages=messages,
+            tools=openai_tools,
+            model=default_model,
+            max_tool_rounds=4,
+        )
+        return result
     except Exception as e:
-        log_error("recommend", str(e))
-        return {"error": "server_error", "message": "Có lỗi xảy ra, vui lòng thử lại."}
+        log_error("chat_endpoint", str(e))
+        return {"error": "server_error", "message": str(e)}
 
 @app.get("/health")
 def health():

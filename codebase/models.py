@@ -1,12 +1,11 @@
 from pydantic import BaseModel
+from typing import List, Optional
 
-class MCQ(BaseModel):
-    meal_time: str
-    group_type: str
-    style: str
-    dietary: str
+class ChatMessage(BaseModel):
+    role: str
+    content: str
 
-class RecommendRequest(BaseModel):
-    lat: float
-    lng: float
-    mcq: MCQ
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    lat: Optional[float] = None
+    lng: Optional[float] = None
