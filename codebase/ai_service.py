@@ -31,7 +31,7 @@ def build_user_prompt(mcq: dict, places: list) -> str:
 Danh sách quán (tối đa 10):
 """
     for p in places[:10]:
-        profile += f"- {p.get('name', '')} | rating: {p.get('rating','?')} | {p.get('formatted_address','')}\n"
+        profile += f"- {p.get('name', '')} | rating: {p.get('rating','?')} | {p.get('vicinity', p.get('formatted_address', ''))}\n"
     return profile
 
 async def get_recommendations(mcq: dict, places: list) -> dict:
@@ -39,40 +39,35 @@ async def get_recommendations(mcq: dict, places: list) -> dict:
     Hàm giả lập (mock-up) AI trả về kết quả dựa trên các kịch bản.
     Giúp team ghép nối mà không tốn API.
     """
-    dietary = mcq.get("dietary", "")
-    meal_time = mcq.get("meal_time", "")
-    
-    # 1. Failure Path
+    # 1. Failure Path (Empty places)
     if not places:
         return {
             "recommendations": [],
             "warning": "Hiện tại không tìm thấy quán nào đáp ứng đầy đủ các tiêu chí bạn yêu cầu."
         }
+
+    try:
+        from providers.openai_provider import OpenAIProvider
+        provider = OpenAIProvider()
         
-    # 2. Low-confidence Path (Giả lập khi chọn Chay + Khuya)
-    if dietary == "Chay" and meal_time == "Khuya":
-        recs = []
-        for i, p in enumerate(places[:3]):
-            recs.append({
-                "place_id": p.get("place_id", f"mock_id_{i}"),
-                "reason": f"Quán có món chay, nhưng thông tin giờ mở cửa khuya chưa chắc chắn.",
-                "confidence": "low"
-            })
-        return {
-            "recommendations": recs,
-            "warning": "Các review gần đây khá cũ, có thể quán không còn mở khuya. Bạn nên tham khảo thêm trước khi quyết định."
-        }
+        prompt = build_user_prompt(mcq, places)
+        messages = [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ]
         
-    # 3. Happy Path (Mặc định)
-    recs = []
-    for i, p in enumerate(places[:3]):
-        recs.append({
-            "place_id": p.get("place_id", f"mock_id_{i}"),
-            "reason": f"Rất phù hợp với nhu cầu ăn {meal_time} của bạn và được đánh giá cao.",
-            "confidence": "high"
-        })
+        response = provider.complete(
+            messages=messages,
+            response_format={"type": "json_object"}
+        )
+        
+        if response.text:
+            return json.loads(response.text)
+        
+    except Exception as e:
+        print(f"AI API Error: {e}")
         
     return {
-        "recommendations": recs,
-        "warning": None
+        "recommendations": [],
+        "warning": "Hệ thống AI đang bận hoặc gặp lỗi xử lý, vui lòng thử lại sau."
     }

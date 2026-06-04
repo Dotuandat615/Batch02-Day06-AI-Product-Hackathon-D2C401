@@ -2,5 +2,34 @@
   "dataset_id": "food_guide_v0_group",
   "dataset_role": "group",
   "description": "Eval bổ sung do team tự viết. P4 (Testing) thêm case vào đây để test 4 paths, edge cases, multi-turn scenarios.",
-  "cases": []
+  "cases": [
+    {
+      "id": "happy_path",
+      "mcq": {
+        "meal_time": "Trưa",
+        "group_type": "Một mình",
+        "style": "Đặc sản địa phương",
+        "dietary": "Không có"
+      }
+    },
+    {
+      "id": "low_confidence_path",
+      "mcq": {
+        "meal_time": "Khuya",
+        "group_type": "Một mình",
+        "style": "Đặc sản địa phương",
+        "dietary": "Chay"
+      }
+    },
+    {
+      "id": "failure_path",
+      "mcq": {
+        "meal_time": "Khuya",
+        "group_type": "Một mình",
+        "style": "Đặc sản địa phương",
+        "dietary": "Chay"
+      },
+      "empty_places": true
+    }
+  ]
 }
