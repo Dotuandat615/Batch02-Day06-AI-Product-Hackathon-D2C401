@@ -1,13 +1,21 @@
 import logging
 import json
+import sys
 from datetime import datetime
+
+# Đảm bảo stdout dùng UTF-8 (tránh lỗi charmap trên Windows)
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+_stream_handler = logging.StreamHandler(sys.stdout)
+_stream_handler.setFormatter(logging.Formatter("%(asctime)s | %(levelname)s | %(message)s"))
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s",
     handlers=[
         logging.FileHandler("app.log", encoding="utf-8"),
-        logging.StreamHandler()  # cũng in ra console
+        _stream_handler,
     ]
 )
 logger = logging.getLogger("foodai")
