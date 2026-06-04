@@ -5,9 +5,9 @@ tools:
   # ---------------- Core tools ----------------
   - name: clarify
     description: >
-      Hỏi người dùng để thu thập thông tin hoặc xác nhận hành động.
-      Dùng khi: (1) cần hỏi MCQ về bữa ăn, (2) thiếu vị trí GPS,
-      (3) cần xác nhận trước khi mở Google Maps.
+      Hỏi người dùng để gỡ rối, thu hẹp lựa chọn hoặc xác nhận hành động.
+      Dùng khi: (1) yêu cầu quá chung chung cần MCQ để làm rõ nhu cầu, (2) cần xác nhận ràng buộc (dị ứng, chay),
+      (3) thiếu vị trí GPS, (4) cần xác nhận trước khi mở Maps. KHÔNG lạm dụng để hỏi dài dòng.
     parameters:
       type: object
       properties:
@@ -21,7 +21,7 @@ tools:
           type: array
           default: []
           items: {type: string}
-          description: "Các lựa chọn nếu response_type là 'choice'."
+          description: "Các câu trả lời ngắn (VD: 'Đồ nước', 'Cơm') để user chọn bấm nút. TUYỆT ĐỐI KHÔNG điền câu hỏi vào mảng này."
       required: [question]
 
   - name: search_nearby_restaurants

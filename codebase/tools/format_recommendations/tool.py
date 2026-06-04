@@ -125,6 +125,7 @@ def format_recs(**kwargs) -> dict[str, Any]:
         line = (
             f"{emoji_rank} **{card['name']}**{confidence_badge}\n"
             f"📍 {card['address']}, cách bạn {card['distance']} — đi bộ {card['walk_time']}\n"
+            f"🗺️ Google Maps: {card['maps_link']}\n"
             f"⭐ {card['rating'] or '?'}\n"
             f"💡 *{card['reason']}*"
         )
