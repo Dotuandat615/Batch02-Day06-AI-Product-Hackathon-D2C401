@@ -23,6 +23,7 @@ class RecommendationItem(BaseModel):
     geometry: dict[str, Any] = Field(default_factory=dict)
     warning: str | None = None
     thumbnail: str | None = None
+    maps_url: str | None = None
     lat: float = 0.0
     lng: float = 0.0
 
@@ -108,7 +109,7 @@ def format_recs(**kwargs) -> dict[str, Any]:
             "walk_time": _walk_time(dist),
             "reason": rec.reason,
             "confidence": rec.confidence,
-            "maps_link": _maps_link(rec.lat, rec.lng),
+            "maps_link": rec.maps_url or _maps_link(rec.lat, rec.lng),
             "warning": rec.warning,
             "thumbnail": rec.thumbnail,
         }
