@@ -333,6 +333,7 @@ body{
 
 .reco-top{display:flex;gap:12px;align-items:flex-start}
 .reco-emoji{font-size:32px;flex-shrink:0;line-height:1;margin-top:2px}
+.reco-img{width:68px;height:68px;object-fit:cover;border-radius:var(--rad-md);flex-shrink:0;background:var(--surface-2)}
 .reco-body{flex:1;min-width:0}
 .reco-header{display:flex;align-items:center;gap:7px;margin-bottom:3px;flex-wrap:wrap}
 .reco-name{font-size:14px;font-weight:700}
@@ -1285,10 +1286,14 @@ async function handleSend(){
 }
 
 function renderAPIRecommendations(recs) {
-  const cardsHtml = recs.map((r, i) => `
+  const cardsHtml = recs.map((r, i) => {
+    const thumb = r.thumbnail
+      ? `<img class="reco-img" src="${r.thumbnail}" alt="${r.name}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'reco-emoji',textContent:'🍽️'}))">`
+      : `<div class="reco-emoji">🍽️</div>`;
+    return `
     <div class="reco-card r${i+1}">
       <div class="reco-top">
-        <div class="reco-emoji">🍽️</div>
+        ${thumb}
         <div class="reco-body">
           <div class="reco-header">
             <span class="reco-name">${r.name}</span>
@@ -1297,6 +1302,7 @@ function renderAPIRecommendations(recs) {
           <div class="reco-desc">${r.vicinity || r.address || ''}</div>
           <div class="reco-tags">
             <span class="tag score">⭐ ${r.rating || '?'}</span>
+            ${r.distance ? `<span class="tag">📍 ${r.distance}</span>` : ''}
           </div>
         </div>
       </div>
@@ -1307,7 +1313,8 @@ function renderAPIRecommendations(recs) {
       <div class="card-actions">
         ${r.maps_link ? `<a class="map-btn" href="${r.maps_link}" target="_blank" rel="noopener noreferrer">Xem trên Google Maps</a>` : ''}
       </div>
-    </div>`).join('');
+    </div>`;
+  }).join('');
 
   appendRow(`<div class="avatar bot">🍜</div>
   <div class="bwrap" style="max-width:86%">
