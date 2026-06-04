@@ -32,7 +32,7 @@ tool_declarations = load_tool_declarations(TOOLS_PATH)
 openai_tools = to_openai_tools(tool_declarations)
 
 # Dùng provider anthropic (hoặc đổi thành gemini/openai nếu muốn)
-provider = make_provider("anthropic")
+provider = make_provider("openai")
 default_model = getattr(provider, "default_model", None)
 
 @app.post("/chat")
