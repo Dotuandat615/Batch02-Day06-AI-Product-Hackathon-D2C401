@@ -38,12 +38,22 @@ default_model = getattr(provider, "default_model", None)
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
-        # Chuyển đổi tin nhắn cho provider
         messages = [{"role": msg.role, "content": msg.content} for msg in req.messages]
-        
-        # Nếu có toạ độ, có thể nhúng vào prompt hệ thống
-        # Trong hackathon, system_prompt tĩnh là đủ, tool search_nearby sẽ hỏi nếu thiếu vị trí
-        
+
+        # Inject GPS vào system message khi frontend đã lấy được vị trí thật.
+        # Nếu không inject, LLM sẽ gọi tool mà không có lat/lng → tool fallback sang IP.
+        if req.lat is not None and req.lng is not None:
+            gps_note = (
+                f"\n\n[GPS] Vị trí thật của người dùng: lat={req.lat}, lng={req.lng}. "
+                f"Khi gọi search_nearby_restaurants, LUÔN truyền lat={req.lat} và lng={req.lng}."
+            )
+            sys_idx = next((i for i, m in enumerate(messages) if m["role"] == "system"), None)
+            if sys_idx is not None:
+                messages[sys_idx] = {**messages[sys_idx],
+                                     "content": messages[sys_idx]["content"] + gps_note}
+            else:
+                messages.insert(0, {"role": "system", "content": system_prompt + gps_note})
+
         result = run_model_tool_loop(
             provider=provider,
             messages=messages,
