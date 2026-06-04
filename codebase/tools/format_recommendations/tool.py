@@ -75,6 +75,7 @@ def format_recs(
             "confidence": rec.get("confidence", "high"),
             "maps_link": _maps_link(lat, lng),
             "warning": rec.get("warning"),
+            "thumbnail": rec.get("thumbnail"),
         }
         cards.append(card)
 
