@@ -5,3 +5,7 @@ __pycache__/
 .env
 .env.*
 !.env.example
+*.pyo
+.vscode/
+*.egg-info/
+.pytest_cache/

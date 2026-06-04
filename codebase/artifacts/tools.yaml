@@ -24,30 +24,22 @@ tools:
           description: "Các lựa chọn nếu response_type là 'choice'."
       required: [question]
 
-  - name: search_nearby
+  - name: search_nearby_restaurants
     description: >
-      Tìm quán ăn gần vị trí người dùng. Gọi tool này sau khi đã có đủ thông tin
-      từ MCQ và tọa độ GPS. Trả về danh sách quán với tên, rating, địa chỉ, khoảng cách.
+      Tìm danh sách quán ăn / cafe / nhà hàng gần vị trí người dùng.
+      Trả về tên quán, địa chỉ, khoảng cách, rating, giờ mở cửa, giá,
+      tiện ích, số điện thoại, link Google Maps và review nổi bật.
+      Dùng khi người dùng hỏi 'quán ăn gần đây', 'tìm cafe',
+      'đặc sản vùng này', hoặc bất kỳ yêu cầu tìm nơi ăn uống theo vị trí.
     parameters:
       type: object
       properties:
-        lat: {type: number, description: "Vĩ độ GPS của người dùng."}
-        lng: {type: number, description: "Kinh độ GPS của người dùng."}
-        radius: {type: integer, default: 500, description: "Bán kính tìm kiếm (mét). Mở rộng nếu kết quả ít."}
-        keyword: {type: string, default: "restaurant", description: "Từ khóa bổ sung (ví dụ: 'chay', 'hải sản', 'phở')."}
-        meal_time: {type: string, default: "", description: "Bữa ăn: sáng/trưa/tối/khuya — dùng để lọc quán mở giờ đó."}
-      required: [lat, lng]
-
-  - name: get_reviews
-    description: >
-      Lấy review và chi tiết của một quán ăn cụ thể theo place_id.
-      Dùng để đánh giá mức độ tin cậy (confidence) và sinh lý do gợi ý.
-    parameters:
-      type: object
-      properties:
-        place_id: {type: string, description: "ID quán ăn (từ kết quả search_nearby)."}
-        max_reviews: {type: integer, default: 5, description: "Số review tối đa cần lấy."}
-      required: [place_id]
+        query: {type: string, description: "Từ khoá tìm kiếm. Nên dùng tiếng Việt."}
+        lat: {type: number, description: "Vĩ độ (latitude) của người dùng."}
+        lng: {type: number, description: "Kinh độ (longitude) của người dùng."}
+        radius_km: {type: number, default: 1.5, description: "Bán kính tìm kiếm tính bằng km."}
+        max_results: {type: integer, default: 5, description: "Số quán tối đa trả về."}
+      required: [query]
 
   - name: format_recommendations
     description: >
