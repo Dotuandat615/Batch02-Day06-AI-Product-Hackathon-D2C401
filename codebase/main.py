@@ -35,24 +35,41 @@ openai_tools = to_openai_tools(tool_declarations)
 provider = make_provider("openai")
 default_model = getattr(provider, "default_model", None)
 
+def inject_gps(
+    messages: list,
+    lat: float | None,
+    lng: float | None,
+    fallback_system: str = "",
+) -> list:
+    """
+    Inject GPS coordinates into the system message so the LLM passes them to tools.
+
+    - Nếu lat/lng là None → trả về messages không đổi.
+    - Nếu đã có system message → append GPS note vào cuối.
+    - Nếu chưa có system message → tạo mới từ fallback_system + GPS note, chèn vào đầu.
+    - Không mutate list đầu vào.
+    """
+    if lat is None or lng is None:
+        return messages
+
+    gps_note = (
+        f"\n\n[GPS] Vị trí thật của người dùng: lat={lat}, lng={lng}. "
+        f"Khi gọi search_nearby_restaurants, LUÔN truyền lat={lat} và lng={lng}."
+    )
+    msgs = list(messages)
+    sys_idx = next((i for i, m in enumerate(msgs) if m["role"] == "system"), None)
+    if sys_idx is not None:
+        msgs[sys_idx] = {**msgs[sys_idx], "content": msgs[sys_idx]["content"] + gps_note}
+    else:
+        msgs.insert(0, {"role": "system", "content": fallback_system + gps_note})
+    return msgs
+
+
 @app.post("/chat")
 async def chat(req: ChatRequest):
     try:
         messages = [{"role": msg.role, "content": msg.content} for msg in req.messages]
-
-        # Inject GPS vào system message khi frontend đã lấy được vị trí thật.
-        # Nếu không inject, LLM sẽ gọi tool mà không có lat/lng → tool fallback sang IP.
-        if req.lat is not None and req.lng is not None:
-            gps_note = (
-                f"\n\n[GPS] Vị trí thật của người dùng: lat={req.lat}, lng={req.lng}. "
-                f"Khi gọi search_nearby_restaurants, LUÔN truyền lat={req.lat} và lng={req.lng}."
-            )
-            sys_idx = next((i for i, m in enumerate(messages) if m["role"] == "system"), None)
-            if sys_idx is not None:
-                messages[sys_idx] = {**messages[sys_idx],
-                                     "content": messages[sys_idx]["content"] + gps_note}
-            else:
-                messages.insert(0, {"role": "system", "content": system_prompt + gps_note})
+        messages = inject_gps(messages, req.lat, req.lng, fallback_system=system_prompt)
 
         result = run_model_tool_loop(
             provider=provider,
