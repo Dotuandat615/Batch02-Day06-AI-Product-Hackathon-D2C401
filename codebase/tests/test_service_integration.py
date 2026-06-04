@@ -1,17 +1,13 @@
 """
-test_service_integration.py — Integration tests cho LocationService.
-Cần GOOGLE_MAPS_API_KEY và ANTHROPIC_API_KEY thật trong .env.
-Nếu chưa có key: các test sẽ bị SKIP tự động.
+test_service_integration.py  —  Tests cho LocationService (SerpAPI google_local).
+
+Mock tests   : chạy ngay, không cần key.
+Integration  : SKIP nếu MAP_API chưa có trong .env.
 
 Chạy: python -m pytest tests/test_service_integration.py -v -s
-
-Phần mock (cuối file) chạy được ngay không cần key.
 """
 
-import sys
-import os
-import json
-import pytest
+import sys, os, pytest
 from unittest.mock import MagicMock, patch
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.stdout.reconfigure(encoding="utf-8")
@@ -19,433 +15,248 @@ sys.stdout.reconfigure(encoding="utf-8")
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(__file__)), ".env"))
 
-GOOGLE_KEY = os.getenv("GOOGLE_MAPS_API_KEY", "")
-ANTHROPIC_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-HAS_GOOGLE_KEY = bool(GOOGLE_KEY) and GOOGLE_KEY != "your_google_maps_api_key_here"
-HAS_ANTHROPIC_KEY = bool(ANTHROPIC_KEY) and ANTHROPIC_KEY != "your_anthropic_api_key_here"
+MAP_KEY   = os.getenv("MAP_API", "")
+HAS_KEY   = bool(MAP_KEY) and MAP_KEY != "your_serpapi_key_here"
 
-from modules.location import LocationService, Location, Restaurant, RestaurantDetail
+from modules.location import LocationService, Location, Restaurant, MenuItem
 
 
-# ─── Integration tests (SKIP nếu chưa có key) ────────────────────────────────
+# ── Helpers ───────────────────────────────────────────────────────────────────
 
-@pytest.mark.skipif(not HAS_GOOGLE_KEY, reason="Cần GOOGLE_MAPS_API_KEY thật")
-class TestGetLocationIntegration:
+NHA_TRANG = Location(lat=12.2451, lng=109.1943, city="Nha Trang",
+                     province="Khánh Hòa", display_name="Nha Trang, Khánh Hòa", source="gps")
 
-    def setup_method(self):
-        self.svc = LocationService()
-
-    def test_ip_geolocation(self):
-        """
-        Đầu vào : không có lat/lng (auto-detect qua IP)
-        Mong đợi: Location với lat/lng hợp lệ và tên thành phố tiếng Việt
-        Ví dụ kết quả:
-            Location(lat=21.02, lng=105.84, city='Hà Nội',
-                     province='Hà Nội', display_name='Hà Nội', source='ip')
-        """
-        loc = self.svc.get_location()
-        print(f"\n  [IP detect] → {loc}")
-        assert isinstance(loc.lat, float)
-        assert isinstance(loc.lng, float)
-        assert -90 <= loc.lat <= 90
-        assert -180 <= loc.lng <= 180
-        assert loc.city != ""
-        assert loc.source == "ip"
-
-    def test_gps_coords_nha_trang(self):
-        """
-        Đầu vào : lat=12.2451, lng=109.1943 (Nha Trang)
-        Mong đợi: Location với city='Nha Trang' hoặc chứa 'Khánh Hòa'
-        Ví dụ kết quả:
-            Location(lat=12.2451, lng=109.1943, city='Nha Trang',
-                     province='Khánh Hòa', display_name='Nha Trang, Khánh Hòa', source='gps')
-        """
-        loc = self.svc.get_location(lat=12.2451, lng=109.1943)
-        print(f"\n  [GPS Nha Trang] → {loc}")
-        assert loc.lat == 12.2451
-        assert loc.lng == 109.1943
-        assert loc.source == "gps"
-        assert "Nha Trang" in loc.display_name or "Khánh Hòa" in loc.display_name
+def _svc():
+    return LocationService(map_api_key="FAKE_KEY")
 
 
-@pytest.mark.skipif(not HAS_GOOGLE_KEY, reason="Cần GOOGLE_MAPS_API_KEY thật")
-class TestGetNearbyRestaurantsIntegration:
+# ── Mock data — đúng với google_local response thật ──────────────────────────
 
-    def setup_method(self):
-        self.svc = LocationService()
-        self.nha_trang = Location(
-            lat=12.2451, lng=109.1943,
-            city="Nha Trang", province="Khánh Hòa",
-            display_name="Nha Trang, Khánh Hòa", source="gps"
-        )
-
-    def test_basic_search(self):
-        """
-        Đầu vào : Nha Trang (12.2451, 109.1943), bán kính 1.5km
-        Mong đợi: list[Restaurant] không rỗng, sắp xếp gần → xa
-        Ví dụ kết quả:
-            [
-              Restaurant(name='Bún cá Nha Trang', distance_text='280m', rating=4.5, ...),
-              Restaurant(name='Bánh căn 74', distance_text='350m', rating=4.3, ...),
-              ...
-            ]
-        """
-        results = self.svc.get_nearby_restaurants(self.nha_trang, radius_km=1.5)
-        print(f"\n  [Nearby 1.5km Nha Trang] → {len(results)} quán")
-        for r in results[:3]:
-            print(f"    {r.name} | {r.distance_text} | ⭐{r.rating} | open={r.is_open_now}")
-        assert len(results) > 0
-        # Phải sắp xếp gần → xa
-        for i in range(len(results) - 1):
-            assert results[i].distance_m <= results[i+1].distance_m
-        # Mỗi quán phải có các trường bắt buộc
-        first = results[0]
-        assert first.place_id != ""
-        assert first.name != ""
-        assert first.distance_m >= 0
-        assert first.maps_url.startswith("https://")
-
-    def test_search_with_keyword(self):
-        """
-        Đầu vào : Nha Trang, bán kính 2km, keyword='bún'
-        Mong đợi: kết quả ưu tiên quán có 'bún' trong tên hoặc loại món
-        """
-        results = self.svc.get_nearby_restaurants(self.nha_trang, radius_km=2.0, keyword="bún")
-        print(f"\n  [Keyword 'bún'] → {len(results)} quán")
-        for r in results[:3]:
-            print(f"    {r.name} | {r.distance_text}")
-        assert len(results) >= 0  # có thể không có, không nên fail
-
-    def test_restaurant_fields(self):
-        """
-        Mong đợi: mỗi Restaurant có đủ các trường dữ liệu từ Google Places
-        """
-        results = self.svc.get_nearby_restaurants(self.nha_trang)
-        assert len(results) > 0
-        r = results[0]
-        # Các trường luôn có
-        assert isinstance(r.place_id, str) and len(r.place_id) > 0
-        assert isinstance(r.name, str)
-        assert isinstance(r.address, str)
-        assert isinstance(r.lat, float)
-        assert isinstance(r.lng, float)
-        assert isinstance(r.distance_m, float)
-        assert isinstance(r.distance_text, str)
-        assert isinstance(r.maps_url, str)
-        assert isinstance(r.types, list)
-        # Các trường có thể None (không phải quán nào cũng có)
-        assert r.rating is None or isinstance(r.rating, float)
-        assert r.price_level is None or r.price_level in (1, 2, 3, 4)
-
-
-@pytest.mark.skipif(not HAS_GOOGLE_KEY, reason="Cần GOOGLE_MAPS_API_KEY thật")
-class TestGetRestaurantDetailIntegration:
-
-    def setup_method(self):
-        self.svc = LocationService()
-        self.nha_trang = Location(
-            lat=12.2451, lng=109.1943,
-            city="Nha Trang", province="Khánh Hòa",
-            display_name="Nha Trang, Khánh Hòa", source="gps"
-        )
-
-    def test_detail_without_ai_menu(self):
-        """
-        Đầu vào : place_id của quán đầu tiên tìm được ở Nha Trang, include_ai_menu=False
-        Mong đợi: RestaurantDetail với reviews, opening_hours, phone
-        Ví dụ kết quả:
-            RestaurantDetail(
-              name='Bún cá Bà Bảy',
-              address='12 Bến Chợ, Nha Trang',
-              phone='0258 3123 456',
-              opening_hours=['Thứ 2: 6:00–14:00', ...],
-              reviews=[Review(author='Nguyễn A', rating=5, text='Ngon lắm!', ...)],
-              menu_items=[]   ← vì include_ai_menu=False
-            )
-        """
-        restaurants = self.svc.get_nearby_restaurants(self.nha_trang, radius_km=1.5)
-        assert len(restaurants) > 0
-        detail = self.svc.get_restaurant_detail(
-            restaurants[0].place_id, self.nha_trang, include_ai_menu=False
-        )
-        print(f"\n  [Detail] {detail.name}")
-        print(f"    Địa chỉ : {detail.address}")
-        print(f"    SĐT     : {detail.phone}")
-        print(f"    Website : {detail.website}")
-        print(f"    Giờ mở  : {detail.opening_hours[:2]}")
-        print(f"    Reviews : {len(detail.reviews)} cái")
-        if detail.reviews:
-            rv = detail.reviews[0]
-            print(f"      → {rv.author} ({rv.rating}⭐): {rv.text[:80]}...")
-
-        assert detail.name != ""
-        assert isinstance(detail.reviews, list)
-        assert isinstance(detail.opening_hours, list)
-        assert detail.menu_items == []
-
-    @pytest.mark.skipif(not HAS_ANTHROPIC_KEY, reason="Cần ANTHROPIC_API_KEY thật")
-    def test_detail_with_ai_menu(self):
-        """
-        Đầu vào : place_id thật, include_ai_menu=True
-        Mong đợi: menu_items chứa 4–6 MenuItem do Claude suy luận
-        Ví dụ kết quả:
-            [
-              MenuItem(dish='Bún cá', description='Bún nước dùng cá tươi đặc trưng Nha Trang',
-                       estimated_price='40.000–60.000đ'),
-              MenuItem(dish='Chả cá chiên', description='Chả cá tự làm, giòn thơm',
-                       estimated_price='25.000–35.000đ'),
-              ...
-            ]
-        """
-        restaurants = self.svc.get_nearby_restaurants(self.nha_trang, radius_km=1.5)
-        assert len(restaurants) > 0
-        detail = self.svc.get_restaurant_detail(
-            restaurants[0].place_id, self.nha_trang, include_ai_menu=True
-        )
-        print(f"\n  [AI Menu] {detail.name}")
-        for item in detail.menu_items:
-            print(f"    {item.dish} — {item.estimated_price}: {item.description}")
-
-        assert len(detail.menu_items) >= 1
-        for item in detail.menu_items:
-            assert item.dish != ""
-            assert item.estimated_price != ""
-
-
-# ─── Mock tests (chạy được ngay, không cần key) ───────────────────────────────
-
-class TestServiceWithMocks:
-    """
-    Dùng unittest.mock để giả lập response từ Google Places API.
-    Không cần key, chạy được ngay, kiểm tra logic xử lý dữ liệu.
-    """
-
-    MOCK_NEARBY_RESPONSE = {
-        "status": "OK",
-        "results": [
-            {
-                "place_id": "ChIJmock001",
-                "name": "Bún cá Nha Trang Bà Bảy",
-                "vicinity": "12 Bến Chợ, Nha Trang",
-                "geometry": {"location": {"lat": 12.2482, "lng": 109.1943}},
-                "rating": 4.6,
-                "user_ratings_total": 234,
-                "price_level": 1,
-                "opening_hours": {"open_now": True},
-                "types": ["restaurant", "food"],
-                "photos": [{"photo_reference": "mock_photo_ref_001"}],
-            },
-            {
-                "place_id": "ChIJmock002",
-                "name": "Bánh căn Mỹ Hòa",
-                "vicinity": "Đường Trần Phú, Nha Trang",
-                "geometry": {"location": {"lat": 12.2471, "lng": 109.1952}},
-                "rating": 4.4,
-                "user_ratings_total": 98,
-                "price_level": 1,
-                "opening_hours": {"open_now": True},
-                "types": ["restaurant", "food"],
-                "photos": [],
-            },
-            {
-                "place_id": "ChIJmock003",
-                "name": "Nem nướng Ninh Hòa Hai Bà",
-                "vicinity": "Lô 6 Chợ Đầm, Nha Trang",
-                "geometry": {"location": {"lat": 12.2404, "lng": 109.1921}},
-                "rating": 4.7,
-                "user_ratings_total": 512,
-                "price_level": 2,
-                "opening_hours": {"open_now": False},
-                "types": ["restaurant", "food"],
-                "photos": [],
-            },
-        ],
-    }
-
-    MOCK_DETAIL_RESPONSE = {
-        "status": "OK",
-        "result": {
-            "place_id": "ChIJmock001",
-            "name": "Bún cá Nha Trang Bà Bảy",
-            "formatted_address": "12 Bến Chợ, Phường Xương Huân, Nha Trang, Khánh Hòa",
-            "formatted_phone_number": "0258 3123 456",
-            "website": None,
-            "geometry": {"location": {"lat": 12.2482, "lng": 109.1943}},
+MOCK_RESPONSE = {
+    "local_results": [
+        {
+            "position": 1,
+            "place_id": "4201058877741143770",
+            "place_id_search": "https://serpapi.com/search.json?engine=google_local&ludocid=4201058877741143770",
+            "provider_id": "/g/12vrd7h2s",
+            "title": "Bún cá Nha Trang Bà Bảy",
+            "type": "Nhà hàng",
+            "address": "12 Bến Chợ, Nha Trang, Khánh Hòa",
+            "gps_coordinates": {"latitude": 12.2482, "longitude": 109.1943},
             "rating": 4.6,
-            "user_ratings_total": 234,
-            "price_level": 1,
-            "types": ["restaurant", "food"],
-            "photos": [],
-            "business_status": "OPERATIONAL",
-            "opening_hours": {
-                "open_now": True,
-                "weekday_text": [
-                    "Thứ 2: 6:00 – 14:00", "Thứ 3: 6:00 – 14:00",
-                    "Thứ 4: 6:00 – 14:00", "Thứ 5: 6:00 – 14:00",
-                    "Thứ 6: 6:00 – 14:00", "Thứ 7: 6:00 – 14:00",
-                    "Chủ nhật: 6:00 – 14:00",
-                ],
-            },
-            "reviews": [
-                {
-                    "author_name": "Nguyễn Minh",
-                    "rating": 5,
-                    "text": "Nước dùng đậm vị cá tươi, đúng kiểu Nha Trang. Giá 45k/tô rất hợp lý.",
-                    "relative_time_description": "2 tuần trước",
-                    "time": 1717200000,
-                },
-                {
-                    "author_name": "Trần Lan",
-                    "rating": 4,
-                    "text": "Quán đông vào buổi sáng, nên đến trước 8h. Chả cá tự làm rất ngon.",
-                    "relative_time_description": "1 tháng trước",
-                    "time": 1714608000,
-                },
-            ],
+            "reviews": 234,
+            "reviews_original": "(234)",
+            "description": '"Nước dùng đậm vị cá tươi, đúng kiểu Nha Trang."',
+            "thumbnail": "https://serpapi.com/images/mock_ba_bay_small.jpeg",
+            "thumbnail_large": "https://lh3.googleusercontent.com/mock_ba_bay_large",
         },
-    }
+        {
+            "position": 2,
+            "place_id": "5162517836559873849",
+            "place_id_search": "https://serpapi.com/search.json?engine=google_local&ludocid=5162517836559873849",
+            "provider_id": "/g/11qxxy0b71",
+            "title": "Bánh căn Mỹ Hòa",
+            "type": "Quán ăn vặt",
+            "address": "Đường Trần Phú, Nha Trang",
+            "gps_coordinates": {"latitude": 12.2471, "longitude": 109.1952},
+            "rating": 4.4,
+            "reviews": 98,
+            "reviews_original": "(98)",
+            "description": '"Bánh giòn, trứng chín đều, ăn kèm mắm nêm rất ngon."',
+            "thumbnail": "https://serpapi.com/images/mock_my_hoa_small.jpeg",
+            "thumbnail_large": "https://lh3.googleusercontent.com/mock_my_hoa_large",
+        },
+        {
+            "position": 3,
+            "place_id": "9999000111222333444",
+            "place_id_search": "https://serpapi.com/search.json?engine=google_local&ludocid=9999000111222333444",
+            "provider_id": "/g/11sd_mock",
+            "title": "Nem nướng Ninh Hòa Hai Bà",
+            "type": "Nhà hàng",
+            "address": "Lô 6 Chợ Đầm, Nha Trang",
+            "gps_coordinates": {"latitude": 12.2404, "longitude": 109.1921},
+            "rating": 4.7,
+            "reviews": 512,
+            "reviews_original": "(512)",
+            "description": '"Nem cuốn bánh tráng tại chỗ, tươi ngon."',
+            "thumbnail": "https://serpapi.com/images/mock_nem_small.jpeg",
+            "thumbnail_large": "https://lh3.googleusercontent.com/mock_nem_large",
+        },
+    ]
+}
 
-    def _make_service(self):
-        """Tạo service với fake key để test logic (không gọi API thật)."""
-        return LocationService(google_api_key="FAKE_KEY_FOR_TEST", anthropic_api_key="FAKE_ANTHROPIC_KEY")
 
-    def test_mock_nearby_returns_correct_count(self):
+# ── Mock tests ────────────────────────────────────────────────────────────────
+
+class TestMock:
+
+    def _call(self, response=MOCK_RESPONSE):
+        mock_resp = MagicMock()
+        mock_resp.is_success = True
+        mock_resp.json.return_value = response
+        with patch("httpx.get", return_value=mock_resp):
+            return _svc().get_nearby_restaurants(NHA_TRANG)
+
+    def test_count(self):
         """
-        Đầu vào : Mock response chứa 3 quán
-        Mong đợi: get_nearby_restaurants() trả về đúng 3 Restaurant
+        Đầu vào : 3 quán trong mock response
+        Mong đợi: 3 Restaurant
         """
-        svc = self._make_service()
-        mock_response = MagicMock()
-        mock_response.json.return_value = self.MOCK_NEARBY_RESPONSE
-
-        loc = Location(lat=12.2451, lng=109.1943, city="Nha Trang",
-                       province="Khánh Hòa", display_name="Nha Trang, Khánh Hòa", source="gps")
-
-        with patch("httpx.get", return_value=mock_response):
-            results = svc.get_nearby_restaurants(loc)
-
-        print(f"\n  [Mock nearby] → {len(results)} quán")
-        for r in results:
-            print(f"    {r.name} | {r.distance_text} | ⭐{r.rating} | open={r.is_open_now}")
+        results = self._call()
+        print(f"\n  → {len(results)} quán")
         assert len(results) == 3
 
-    def test_mock_nearby_sorted_by_distance(self):
+    def test_sorted_by_distance(self):
         """
-        Đầu vào : 3 quán ở khoảng cách khác nhau
-        Mong đợi: kết quả sắp xếp từ gần nhất đến xa nhất
-        Ví dụ:
-            [Bún cá Bà Bảy (345m), Bánh căn Mỹ Hòa (~490m), Nem nướng (~670m)]
+        Đầu vào : 3 quán ở tọa độ khác nhau
+        Mong đợi: sắp xếp gần → xa
+        Kết quả thực tế:
+          Bánh căn Mỹ Hòa  ~243m  (gần nhất)
+          Bún cá Bà Bảy    ~345m
+          Nem nướng        ~575m  (xa nhất)
         """
-        svc = self._make_service()
-        mock_response = MagicMock()
-        mock_response.json.return_value = self.MOCK_NEARBY_RESPONSE
-
-        loc = Location(lat=12.2451, lng=109.1943, city="Nha Trang",
-                       province="Khánh Hòa", display_name="Nha Trang, Khánh Hòa", source="gps")
-
-        with patch("httpx.get", return_value=mock_response):
-            results = svc.get_nearby_restaurants(loc)
-
+        results = self._call()
         distances = [r.distance_m for r in results]
-        print(f"\n  [Sort kiểm tra] distances: {[f'{d:.0f}m' for d in distances]}")
+        print(f"\n  distances: {[f'{d:.0f}m ({r.title})' for r, d in zip(results, distances)]}")
         assert distances == sorted(distances)
 
-    def test_mock_nearby_restaurant_fields(self):
+    def test_all_api_fields_present(self):
         """
-        Đầu vào : Mock quán đầu tiên (Bún cá Bà Bảy)
-        Mong đợi:
-            name         = "Bún cá Nha Trang Bà Bảy"
-            address      = "12 Bến Chợ, Nha Trang"
-            rating       = 4.6
-            review_count = 234
-            price_level  = 1
-            is_open_now  = True
-            photo_url    chứa "mock_photo_ref_001"
-            maps_url     bắt đầu bằng "https://www.google.com/maps/dir/"
+        Đầu vào : Mock Bún cá Bà Bảy
+        Mong đợi (tất cả trường từ API đều có mặt và đúng giá trị):
+            position             = 1
+            place_id             = "4201058877741143770"
+            provider_id          = "/g/12vrd7h2s"
+            title                = "Bún cá Nha Trang Bà Bảy"
+            type                 = "Nhà hàng"
+            address              = "12 Bến Chợ, Nha Trang, Khánh Hòa"
+            rating               = 4.6
+            review_count         = 234
+            review_count_original= "(234)"
+            description          chứa "cá tươi"
+            thumbnail            bắt đầu "https://"
+            thumbnail_large      bắt đầu "https://"
+            place_id_search      chứa "ludocid"
+        Và các trường tính thêm:
+            distance_text        = "345m"
+            maps_url             bắt đầu "https://www.google.com/maps/dir/"
         """
-        svc = self._make_service()
-        mock_response = MagicMock()
-        mock_response.json.return_value = self.MOCK_NEARBY_RESPONSE
+        results = self._call()
+        r = next(x for x in results if "Bà Bảy" in x.title)
 
-        loc = Location(lat=12.2451, lng=109.1943, city="Nha Trang",
-                       province="Khánh Hòa", display_name="Nha Trang, Khánh Hòa", source="gps")
+        print(f"\n  [All fields: {r.title}]")
+        print(f"    position              = {r.position}")
+        print(f"    place_id              = {r.place_id}")
+        print(f"    provider_id           = {r.provider_id}")
+        print(f"    type                  = {r.type}")
+        print(f"    address               = {r.address}")
+        print(f"    rating                = {r.rating}")
+        print(f"    review_count          = {r.review_count}")
+        print(f"    review_count_original = {r.review_count_original}")
+        print(f"    description           = {r.description}")
+        print(f"    thumbnail             = {r.thumbnail}")
+        print(f"    thumbnail_large       = {r.thumbnail_large}")
+        print(f"    distance_text         = {r.distance_text}")
+        print(f"    maps_url              = {r.maps_url[:55]}...")
 
-        with patch("httpx.get", return_value=mock_response):
-            results = svc.get_nearby_restaurants(loc)
+        assert r.position              == 1
+        assert r.place_id              == "4201058877741143770"
+        assert r.provider_id           == "/g/12vrd7h2s"
+        assert r.title                 == "Bún cá Nha Trang Bà Bảy"
+        assert r.type                  == "Nhà hàng"
+        assert r.address               == "12 Bến Chợ, Nha Trang, Khánh Hòa"
+        assert r.rating                == 4.6
+        assert r.review_count          == 234
+        assert r.review_count_original == "(234)"
+        assert "cá tươi" in (r.description or "")
+        assert (r.thumbnail or "").startswith("https://")
+        assert (r.thumbnail_large or "").startswith("https://")
+        assert "ludocid" in r.place_id_search
+        assert r.distance_text         == "345m"
+        assert r.maps_url.startswith("https://www.google.com/maps/dir/")
 
-        # Tìm quán Bà Bảy (gần nhất)
-        ba_bay = next(r for r in results if "Bà Bảy" in r.name)
-        print(f"\n  [Fields Bà Bảy]")
-        print(f"    name         = {ba_bay.name}")
-        print(f"    address      = {ba_bay.address}")
-        print(f"    distance     = {ba_bay.distance_text}")
-        print(f"    rating       = {ba_bay.rating}")
-        print(f"    review_count = {ba_bay.review_count}")
-        print(f"    price_level  = {ba_bay.price_level}")
-        print(f"    is_open_now  = {ba_bay.is_open_now}")
-        print(f"    maps_url     = {ba_bay.maps_url[:60]}...")
-
-        assert ba_bay.name == "Bún cá Nha Trang Bà Bảy"
-        assert ba_bay.address == "12 Bến Chợ, Nha Trang"
-        assert ba_bay.rating == 4.6
-        assert ba_bay.review_count == 234
-        assert ba_bay.price_level == 1
-        assert ba_bay.is_open_now is True
-        assert "mock_photo_ref_001" in (ba_bay.photo_url or "")
-        assert ba_bay.maps_url.startswith("https://www.google.com/maps/dir/")
-
-    def test_mock_detail_fields(self):
+    def test_empty_response(self):
         """
-        Đầu vào : Mock Place Detail response cho Bún cá Bà Bảy
-        Mong đợi:
-            phone          = "0258 3123 456"
-            opening_hours  = 7 phần tử (7 ngày trong tuần)
-            reviews        = 2 Review objects
-            reviews[0].author = "Nguyễn Minh"
-            reviews[0].rating = 5
-            reviews[0].text   chứa "45k"
+        Đầu vào : local_results rỗng
+        Mong đợi: list rỗng, không crash
         """
-        svc = self._make_service()
-        mock_response = MagicMock()
-        mock_response.json.return_value = self.MOCK_DETAIL_RESPONSE
-
-        loc = Location(lat=12.2451, lng=109.1943, city="Nha Trang",
-                       province="Khánh Hòa", display_name="Nha Trang, Khánh Hòa", source="gps")
-
-        with patch("httpx.get", return_value=mock_response):
-            detail = svc.get_restaurant_detail("ChIJmock001", loc, include_ai_menu=False)
-
-        print(f"\n  [Detail fields]")
-        print(f"    name          = {detail.name}")
-        print(f"    address       = {detail.address}")
-        print(f"    phone         = {detail.phone}")
-        print(f"    opening_hours = {detail.opening_hours}")
-        print(f"    reviews count = {len(detail.reviews)}")
-        print(f"    review[0]     = {detail.reviews[0].author} ({detail.reviews[0].rating}⭐): {detail.reviews[0].text[:50]}...")
-
-        assert detail.name == "Bún cá Nha Trang Bà Bảy"
-        assert detail.phone == "0258 3123 456"
-        assert len(detail.opening_hours) == 7
-        assert len(detail.reviews) == 2
-        assert detail.reviews[0].author == "Nguyễn Minh"
-        assert detail.reviews[0].rating == 5
-        assert "45k" in detail.reviews[0].text
-        assert detail.menu_items == []  # vì include_ai_menu=False
-
-    def test_zero_results_returns_empty_list(self):
-        """
-        Đầu vào : Google trả về ZERO_RESULTS (không có quán nào)
-        Mong đợi: list rỗng [], không raise exception
-        """
-        svc = self._make_service()
-        mock_response = MagicMock()
-        mock_response.json.return_value = {"status": "ZERO_RESULTS", "results": []}
-
-        loc = Location(lat=0.0, lng=0.0, city="Giữa Biển",
-                       province="", display_name="Giữa Biển", source="gps")
-
-        with patch("httpx.get", return_value=mock_response):
-            results = svc.get_nearby_restaurants(loc)
-
-        print(f"\n  [Zero results] → {results}")
+        results = self._call({"local_results": []})
+        print(f"\n  [empty] → {results}")
         assert results == []
+
+    def test_missing_optional_fields(self):
+        """
+        Đầu vào : quán không có rating, description, thumbnail
+        Mong đợi: không crash, các trường đó là None
+        """
+        minimal = {"local_results": [{
+            "position": 1,
+            "place_id": "123", "place_id_search": "", "provider_id": "",
+            "title": "Quán Test", "type": "Nhà hàng", "address": "Test",
+            "gps_coordinates": {"latitude": 12.2451, "longitude": 109.1943},
+        }]}
+        results = self._call(minimal)
+        r = results[0]
+        print(f"\n  [minimal] rating={r.rating} desc={r.description} thumb={r.thumbnail}")
+        assert r.rating       is None
+        assert r.description  is None
+        assert r.thumbnail    is None
+        assert r.distance_m   == 0.0   # cùng vị trí với user
+
+
+# ── Integration tests (cần MAP_API thật) ────────────────────────────────────
+
+@pytest.mark.skipif(not HAS_KEY, reason="Cần MAP_API thật trong .env")
+class TestIntegration:
+
+    def setup_method(self):
+        self.svc = LocationService()
+
+    def test_ip_detect(self):
+        """
+        Đầu vào : không truyền gì
+        Mong đợi: Location với lat/lng hợp lệ, source='ip'
+        """
+        loc = self.svc.get_location()
+        print(f"\n  [IP] → {loc.display_name} ({loc.lat:.4f}, {loc.lng:.4f})")
+        assert -90 <= loc.lat <= 90
+        assert -180 <= loc.lng <= 180
+        assert loc.source == "ip"
+
+    def test_nearby_nha_trang(self):
+        """
+        Đầu vào : Nha Trang (12.2451, 109.1943), 1.5km, "quán ăn"
+        Mong đợi:
+            - Có ít nhất 1 kết quả
+            - Sắp xếp gần → xa
+            - Mỗi quán có title, address, gps_coordinates, rating
+        """
+        loc     = self.svc.get_location(lat=12.2451, lng=109.1943)
+        results = self.svc.get_nearby_restaurants(loc, radius_km=1.5, query="quán ăn")
+        print(f"\n  [Nha Trang 1.5km] → {len(results)} quán")
+        for r in results[:5]:
+            print(f"    [{r.position}] {r.title} | {r.distance_text} | ⭐{r.rating} | {r.type}")
+        assert len(results) > 0
+        assert [r.distance_m for r in results] == sorted(r.distance_m for r in results)
+        r0 = results[0]
+        assert r0.title   != ""
+        assert r0.address != ""
+        assert r0.lat     != 0.0
+        assert r0.maps_url.startswith("https://")
+
+    def test_nearby_ha_noi_cafe(self):
+        """
+        Đầu vào : Hà Nội (21.0285, 105.8542), 1.5km, "quán cafe"
+        Mong đợi: list (có thể rỗng), không crash, các trường đúng kiểu
+        """
+        loc     = self.svc.get_location(lat=21.0285, lng=105.8542)
+        results = self.svc.get_nearby_restaurants(loc, radius_km=1.5, query="quán cafe")
+        print(f"\n  [HN cafe] → {len(results)} quán")
+        for r in results[:3]:
+            print(f"    {r.title} | {r.distance_text} | {r.type} | ⭐{r.rating}")
+            print(f"      desc: {r.description}")
+        assert isinstance(results, list)
+        for r in results:
+            assert isinstance(r.title,    str)
+            assert isinstance(r.distance_m, float)
+            assert isinstance(r.maps_url, str)

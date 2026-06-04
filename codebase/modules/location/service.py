@@ -1,30 +1,38 @@
 """
-location/service.py
+location/service.py  —  SerpAPI google_maps + ip-api.com
 
-Cách dùng nhanh:
+Cách dùng:
     from modules.location import LocationService
 
-    svc = LocationService(google_api_key="...", anthropic_api_key="...")
+    svc = LocationService()
+    loc     = svc.get_location()                            # auto-detect qua IP
+    loc     = svc.get_location(lat=21.0285, lng=105.8542)  # hoặc GPS
 
-    # 1. Lấy vị trí người dùng (qua IP nếu không có lat/lng)
-    loc = svc.get_location()                        # tự detect qua IP
-    loc = svc.get_location(lat=12.2451, lng=109.19) # hoặc truyền thẳng
+    results = svc.get_nearby_restaurants(loc, radius_km=1.5, query="quán ăn")
+    reviews = svc.get_reviews(results[0])
+    menu    = svc.get_ai_menu(results[0])
 
-    # 2. Lấy danh sách quán xung quanh
-    restaurants = svc.get_nearby_restaurants(loc)
-
-    # 3. Lấy chi tiết 1 quán (reviews, giờ, số điện thoại, menu AI)
-    detail = svc.get_restaurant_detail(restaurants[0].place_id, loc)
+.env cần:
+    MAP_API           = <serpapi_key>
+    MAP_ENDPOINT      = https://serpapi.com/search
+    ANTHROPIC_API_KEY = <key>   (chỉ cần cho get_ai_menu)
 """
 
-import os
-import json
+import os, json
 import httpx
-import anthropic
 from dataclasses import dataclass, field
 from typing import Optional
 
 from .geo_utils import haversine_m, fmt_distance, maps_url
+
+_ZOOM = [(0.5, 16), (1.0, 15), (1.5, 14), (3.0, 13), (6.0, 12), (12.0, 11)]
+
+def _to_zoom(km: float) -> int:
+    for threshold, z in _ZOOM:
+        if km <= threshold:
+            return z
+    return 11
+
 
 # ── Data classes ──────────────────────────────────────────────────────────────
 
@@ -32,123 +40,131 @@ from .geo_utils import haversine_m, fmt_distance, maps_url
 class Location:
     lat: float
     lng: float
-    city: str                   # "Nha Trang"
-    province: str               # "Khánh Hòa"
-    display_name: str           # "Nha Trang, Khánh Hòa"
-    source: str                 # "ip" | "gps" | "manual"
+    city: str
+    province: str
+    display_name: str   # "Nha Trang, Khánh Hòa"
+    source: str         # "ip" | "gps"
 
 
 @dataclass
 class Review:
     author: str
-    rating: int                 # 1–5
+    rating: Optional[int]
     text: str
-    time_description: str       # "1 tháng trước"
-    timestamp: int              # Unix epoch
+    date: str           # "2 tuần trước"
 
 
 @dataclass
 class MenuItem:
     dish: str
     description: str
-    estimated_price: str        # "35.000–55.000đ"
+    estimated_price: str
 
 
 @dataclass
 class Restaurant:
-    place_id: str
-    name: str
+    # ── Định danh ──────────────────────────────────────────────────────────────
+    position: int
+    place_id: str               # ChIJ... (Google Maps Place ID)
+    data_id: str                # 0x... (dùng để lấy reviews qua google_maps_reviews)
+    data_cid: str
+    reviews_link: str           # SerpAPI link lấy reviews
+    place_id_search: str        # SerpAPI link chi tiết quán
+    provider_id: str
+
+    # ── Thông tin cơ bản ───────────────────────────────────────────────────────
+    title: str
     address: str
     lat: float
     lng: float
-    distance_m: float           # khoảng cách tính bằng mét
-    distance_text: str          # "350m" | "1.2km"
-    maps_url: str               # Google Maps deep link
+    phone: Optional[str]
+    website: Optional[str]
+
+    # ── Loại hình ──────────────────────────────────────────────────────────────
+    type: str                   # loại hình chính, vd "Nhà hàng"
+    types: list[str]            # tất cả loại hình
+    type_id: str
+    type_ids: list[str]
+
+    # ── Đánh giá ───────────────────────────────────────────────────────────────
     rating: Optional[float]
     review_count: Optional[int]
-    price_level: Optional[int]  # 1 = $, 2 = $$, 3 = $$$, 4 = $$$$
-    is_open_now: Optional[bool]
-    types: list[str]            # ["restaurant", "food", ...]
-    photo_url: Optional[str]    # URL ảnh đại diện (cần API key để hiển thị)
+    user_review: Optional[str]  # 1 snippet review nổi bật
 
+    # ── Giá ────────────────────────────────────────────────────────────────────
+    price: Optional[str]        # "1-100.000 ₫"
+    price_level: Optional[int]  # 1–4
 
-@dataclass
-class RestaurantDetail(Restaurant):
-    phone: Optional[str] = None
-    website: Optional[str] = None
-    opening_hours: list[str] = field(default_factory=list)  # ["Thứ 2: 7:00–22:00", ...]
-    reviews: list[Review] = field(default_factory=list)
-    menu_items: list[MenuItem] = field(default_factory=list)  # do AI suy luận
+    # ── Giờ hoạt động ──────────────────────────────────────────────────────────
+    open_state: Optional[str]           # "Đang mở cửa · Đóng cửa vào 23:00"
+    operating_hours: dict               # {"thứ hai": "08:00–22:00", ...}
+
+    # ── Tiện ích & không gian (từ extensions) ──────────────────────────────────
+    highlights: list[str]               # ["Cà phê ngon", "Wi-Fi miễn phí"]
+    service_options_list: list[str]     # ["Ăn tại chỗ", "Giao hàng", ...]
+    offerings: list[str]                # ["Cà phê", "Rượu"]
+    atmosphere: list[str]               # ["Ấm cúng", "Yên tĩnh"]
+    popular_for: list[str]
+    amenities: list[str]
+    payments: list[str]
+    children: list[str]
+    parking: list[str]
+    service_options_dict: dict          # {"Ăn_tại_chỗ": True, ...}
+
+    # ── Ảnh ────────────────────────────────────────────────────────────────────
+    thumbnail: Optional[str]            # ảnh thumbnail từ SerpAPI
+    serpapi_thumbnail: Optional[str]
+
+    # ── Khoảng cách & chỉ đường (tính thêm) ────────────────────────────────────
+    distance_m: float
+    distance_text: str
+    maps_url: str
+
+    # ── Điền sau khi gọi get_reviews() / get_ai_menu() ─────────────────────────
+    reviews: list[Review]    = field(default_factory=list)
+    menu_items: list[MenuItem] = field(default_factory=list)
 
 
 # ── Service ───────────────────────────────────────────────────────────────────
 
 class LocationService:
-    PLACES_BASE = "https://maps.googleapis.com/maps/api/place"
-    PHOTO_BASE  = "https://maps.googleapis.com/maps/api/place/photo"
-    DEFAULT_RADIUS_KM = 1.5     # bán kính mặc định: 1.5km (phù hợp đi bộ)
-    MAX_RESULTS = 20            # lấy tối đa 20 quán trước khi lọc
+    DEFAULT_RADIUS_KM = 1.5
+    MAX_RESULTS = 20
 
-    def __init__(self, google_api_key: str = None, anthropic_api_key: str = None):
-        self._gkey  = google_api_key  or os.getenv("GOOGLE_MAPS_API_KEY", "")
-        self._akey  = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY", "")
-        if not self._gkey:
-            raise ValueError("Cần GOOGLE_MAPS_API_KEY — đặt trong .env hoặc truyền vào constructor.")
+    def __init__(self, map_api_key: str = None, map_endpoint: str = None,
+                 anthropic_api_key: str = None):
+        self._key      = map_api_key      or os.getenv("MAP_API", "")
+        self._endpoint = (map_endpoint    or os.getenv("MAP_ENDPOINT",
+                          "https://serpapi.com/search")).split("?")[0]
+        self._akey     = anthropic_api_key or os.getenv("ANTHROPIC_API_KEY", "")
 
-    # ── 1. Lấy vị trí ─────────────────────────────────────────────────────────
+        if not self._key:
+            raise ValueError("Cần MAP_API — đặt trong .env hoặc truyền vào constructor.")
+
+    # ── 1. Vị trí ─────────────────────────────────────────────────────────────
 
     def get_location(self, lat: float = None, lng: float = None) -> Location:
-        """
-        Trả về Location.
-        - Nếu có lat/lng: dùng trực tiếp, reverse-geocode để lấy tên thành phố.
-        - Nếu không: tự detect qua địa chỉ IP (dùng ip-api.com, miễn phí).
-        """
+        """Auto-detect qua IP, hoặc nhận lat/lng trực tiếp."""
+        ip_loc = self._detect_by_ip()
         if lat is not None and lng is not None:
-            return self._reverse_geocode(lat, lng, source="gps")
-        return self._ip_geolocation()
+            return Location(lat=lat, lng=lng, city=ip_loc.city,
+                            province=ip_loc.province,
+                            display_name=ip_loc.display_name, source="gps")
+        return ip_loc
 
-    def _ip_geolocation(self) -> Location:
-        """ip-api.com — miễn phí, không cần key, giới hạn 45 req/phút."""
-        resp = httpx.get("http://ip-api.com/json/?lang=vi&fields=lat,lon,city,regionName,status,message",
-                         timeout=6.0)
+    def _detect_by_ip(self) -> Location:
+        resp = httpx.get(
+            "http://ip-api.com/json/",
+            params={"lang": "vi", "fields": "status,message,lat,lon,city,regionName"},
+            timeout=6.0,
+        )
         data = resp.json()
         if data.get("status") != "success":
-            raise RuntimeError(f"ip-api.com lỗi: {data.get('message', 'unknown')}")
-        city = data.get("city", "")
-        province = data.get("regionName", "")
-        return Location(
-            lat=data["lat"], lng=data["lon"],
-            city=city, province=province,
-            display_name=f"{city}, {province}" if city != province else city,
-            source="ip",
-        )
-
-    def _reverse_geocode(self, lat: float, lng: float, source: str) -> Location:
-        """Google Geocoding API: tọa độ → tên thành phố."""
-        resp = httpx.get(
-            "https://maps.googleapis.com/maps/api/geocode/json",
-            params={"latlng": f"{lat},{lng}", "language": "vi",
-                    "result_type": "locality|administrative_area_level_1",
-                    "key": self._gkey},
-            timeout=8.0,
-        )
-        data = resp.json()
-        if data.get("status") != "OK":
-            raise RuntimeError(f"Google Geocoding lỗi: {data.get('status')}")
-        city = province = ""
-        for comp in data["results"][0].get("address_components", []):
-            t = comp.get("types", [])
-            if "locality" in t:
-                city = comp["long_name"]
-            if "administrative_area_level_1" in t:
-                province = comp["long_name"]
-        city = city or province or "Không xác định"
-        return Location(
-            lat=lat, lng=lng,
-            city=city, province=province,
-            display_name=f"{city}, {province}" if city != province and province else city,
-            source=source,
-        )
+            raise RuntimeError(f"ip-api.com: {data.get('message')}")
+        city, province = data.get("city", ""), data.get("regionName", "")
+        display = f"{city}, {province}" if city != province and province else city
+        return Location(lat=data["lat"], lng=data["lon"], city=city,
+                        province=province, display_name=display, source="ip")
 
     # ── 2. Danh sách quán xung quanh ──────────────────────────────────────────
 
@@ -156,223 +172,166 @@ class LocationService:
         self,
         location: Location,
         radius_km: float = DEFAULT_RADIUS_KM,
-        keyword: str = "",
+        query: str = "quán ăn",
     ) -> list[Restaurant]:
         """
-        Trả về danh sách quán ăn gần location, sắp xếp theo khoảng cách.
-
-        Params:
-            location   : Location object (từ get_location())
-            radius_km  : bán kính tìm kiếm (mặc định 1.5km)
-            keyword    : từ khoá lọc thêm, ví dụ "chay", "đặc sản", "bún bò"
-
-        Trả về list[Restaurant] — tất cả trường có trong Google Places API.
+        Tìm quán xung quanh location trong radius_km.
+        Trả về list[Restaurant] sắp xếp gần → xa.
+        Tất cả trường mà google_maps API trả về đều được giữ nguyên.
         """
-        params = {
-            "location": f"{location.lat},{location.lng}",
-            "radius": int(radius_km * 1000),
-            "type": "restaurant",
-            "language": "vi",
-            "key": self._gkey,
-        }
-        if keyword:
-            params["keyword"] = keyword
+        resp = httpx.get(
+            self._endpoint,
+            params={
+                "engine":  "google_maps",
+                "q":       query,
+                "ll":      f"@{location.lat},{location.lng},{_to_zoom(radius_km)}z",
+                "type":    "search",
+                "hl":      "vi",
+                "api_key": self._key,
+            },
+            timeout=15.0,
+        )
+        resp.raise_for_status()
+        raw = resp.json().get("local_results", [])
+        results = [self._parse(r, location) for r in raw[:self.MAX_RESULTS]]
+        results.sort(key=lambda r: r.distance_m)
+        return results
 
-        results = self._paginate_nearby(params)
-        restaurants = [self._parse_restaurant(p, location) for p in results]
-        restaurants.sort(key=lambda r: r.distance_m)
-        return restaurants
+    def _parse(self, r: dict, loc: Location) -> Restaurant:
+        coords = r.get("gps_coordinates", {})
+        r_lat  = coords.get("latitude",  0.0)
+        r_lng  = coords.get("longitude", 0.0)
+        dist   = haversine_m(loc.lat, loc.lng, r_lat, r_lng)
 
-    def _paginate_nearby(self, params: dict) -> list:
-        """Gọi Nearby Search, lấy tối đa MAX_RESULTS quán (có thể qua nhiều trang)."""
-        all_results = []
-        url = f"{self.PLACES_BASE}/nearbysearch/json"
-
-        while True:
-            resp = httpx.get(url, params=params, timeout=10.0)
-            data = resp.json()
-            status = data.get("status")
-            if status == "ZERO_RESULTS":
-                break
-            if status not in ("OK", "ZERO_RESULTS"):
-                raise RuntimeError(f"Google Places Nearby Search lỗi: {status} — {data.get('error_message', '')}")
-            all_results.extend(data.get("results", []))
-            if len(all_results) >= self.MAX_RESULTS or "next_page_token" not in data:
-                break
-            # Google yêu cầu delay ~2s trước khi dùng next_page_token
-            import time; time.sleep(2)
-            params = {"pagetoken": data["next_page_token"], "key": self._gkey}
-
-        return all_results[:self.MAX_RESULTS]
-
-    def _parse_restaurant(self, p: dict, location: Location) -> Restaurant:
-        loc = p.get("geometry", {}).get("location", {})
-        r_lat, r_lng = loc.get("lat", 0.0), loc.get("lng", 0.0)
-        dist = haversine_m(location.lat, location.lng, r_lat, r_lng)
-
-        photos = p.get("photos", [])
-        photo_url = None
-        if photos:
-            ref = photos[0].get("photo_reference", "")
-            photo_url = (
-                f"{self.PHOTO_BASE}?maxwidth=400&photo_reference={ref}&key={self._gkey}"
-            )
+        # Trích xuất extensions (list of single-key dicts)
+        ext = {}
+        for d in r.get("extensions", []):
+            ext.update(d)
 
         return Restaurant(
-            place_id=p["place_id"],
-            name=p.get("name", ""),
-            address=p.get("vicinity", ""),
-            lat=r_lat,
-            lng=r_lng,
-            distance_m=dist,
-            distance_text=fmt_distance(dist),
-            maps_url=maps_url(r_lat, r_lng, p.get("name", ""), location.lat, location.lng),
-            rating=p.get("rating"),
-            review_count=p.get("user_ratings_total"),
-            price_level=p.get("price_level"),
-            is_open_now=p.get("opening_hours", {}).get("open_now"),
-            types=p.get("types", []),
-            photo_url=photo_url,
+            # Định danh
+            position         = r.get("position", 0),
+            place_id         = r.get("place_id", ""),
+            data_id          = r.get("data_id", ""),
+            data_cid         = r.get("data_cid", ""),
+            reviews_link     = r.get("reviews_link", ""),
+            place_id_search  = r.get("place_id_search", ""),
+            provider_id      = r.get("provider_id", ""),
+            # Cơ bản
+            title            = r.get("title", ""),
+            address          = r.get("address", ""),
+            lat              = r_lat,
+            lng              = r_lng,
+            phone            = r.get("phone"),
+            website          = r.get("website"),
+            # Loại hình
+            type             = r.get("type", ""),
+            types            = r.get("types", []),
+            type_id          = r.get("type_id", ""),
+            type_ids         = r.get("type_ids", []),
+            # Đánh giá
+            rating           = r.get("rating"),
+            review_count     = r.get("reviews"),
+            user_review      = r.get("user_review"),
+            # Giá
+            price            = r.get("price"),
+            price_level      = r.get("extracted_price"),
+            # Giờ
+            open_state       = r.get("open_state"),
+            operating_hours  = r.get("operating_hours", {}),
+            # Extensions
+            highlights           = ext.get("highlights", []),
+            service_options_list = ext.get("service_options", []),
+            offerings            = ext.get("offerings", []),
+            atmosphere           = ext.get("atmosphere", []),
+            popular_for          = ext.get("popular_for", []),
+            amenities            = ext.get("amenities", []),
+            payments             = ext.get("payments", []),
+            children             = ext.get("children", []),
+            parking              = ext.get("parking", []),
+            service_options_dict = r.get("service_options", {}),
+            # Ảnh
+            thumbnail            = r.get("thumbnail"),
+            serpapi_thumbnail    = r.get("serpapi_thumbnail"),
+            # Tính thêm
+            distance_m           = dist,
+            distance_text        = fmt_distance(dist),
+            maps_url             = maps_url(r_lat, r_lng, r.get("title", ""),
+                                            loc.lat, loc.lng),
         )
 
-    # ── 3. Chi tiết quán: reviews, giờ, SĐT, menu AI ─────────────────────────
+    # ── 3. Reviews ────────────────────────────────────────────────────────────
 
-    def get_restaurant_detail(
-        self,
-        place_id: str,
-        location: Location = None,
-        include_ai_menu: bool = True,
-    ) -> RestaurantDetail:
+    def get_reviews(self, restaurant: Restaurant, max_reviews: int = 10) -> list[Review]:
         """
-        Lấy toàn bộ thông tin chi tiết của một quán.
-
-        Params:
-            place_id        : Google Place ID (lấy từ Restaurant.place_id)
-            location        : dùng để tính khoảng cách và tạo Maps URL chỉ đường
-            include_ai_menu : True = dùng Claude để suy luận menu từ tên quán + reviews
-
-        Trả về RestaurantDetail với tất cả trường từ Places API + menu AI.
+        Lấy reviews thật từ google_maps_reviews engine.
+        Cần restaurant.data_id (có trong kết quả get_nearby_restaurants).
+        Trả về list[Review], gán vào restaurant.reviews nếu muốn lưu lại.
         """
-        fields = ",".join([
-            "place_id", "name", "formatted_address",
-            "formatted_phone_number", "website",
-            "opening_hours", "rating", "user_ratings_total",
-            "price_level", "reviews", "geometry",
-            "types", "photos", "business_status",
-            "editorial_summary",
-        ])
+        if not restaurant.data_id:
+            return []
         resp = httpx.get(
-            f"{self.PLACES_BASE}/details/json",
-            params={"place_id": place_id, "fields": fields, "language": "vi", "key": self._gkey},
-            timeout=10.0,
+            self._endpoint,
+            params={
+                "engine":  "google_maps_reviews",
+                "data_id": restaurant.data_id,
+                "hl":      "vi",
+                "api_key": self._key,
+            },
+            timeout=15.0,
         )
-        data = resp.json()
-        if data.get("status") != "OK":
-            raise RuntimeError(f"Google Place Details lỗi: {data.get('status')}")
-
-        r = data["result"]
-        loc = r.get("geometry", {}).get("location", {})
-        r_lat, r_lng = loc.get("lat", 0.0), loc.get("lng", 0.0)
-
-        # Khoảng cách và Maps URL
-        if location and location.lat:
-            dist = haversine_m(location.lat, location.lng, r_lat, r_lng)
-            dist_text = fmt_distance(dist)
-            murl = maps_url(r_lat, r_lng, r.get("name", ""), location.lat, location.lng)
-        else:
-            dist, dist_text = 0.0, ""
-            murl = maps_url(r_lat, r_lng, r.get("name", ""))
-
-        # Ảnh đại diện
-        photos = r.get("photos", [])
-        photo_url = None
-        if photos:
-            ref = photos[0].get("photo_reference", "")
-            photo_url = f"{self.PHOTO_BASE}?maxwidth=800&photo_reference={ref}&key={self._gkey}"
-
-        # Reviews
+        if not resp.is_success:
+            return []
         reviews = [
             Review(
-                author=rv.get("author_name", "Ẩn danh"),
-                rating=rv.get("rating", 0),
-                text=rv.get("text", ""),
-                time_description=rv.get("relative_time_description", ""),
-                timestamp=rv.get("time", 0),
+                author = rv.get("user", {}).get("name", "Ẩn danh"),
+                rating = rv.get("rating"),
+                text   = rv.get("snippet", ""),
+                date   = rv.get("date", ""),
             )
-            for rv in r.get("reviews", [])
+            for rv in resp.json().get("reviews", [])[:max_reviews]
         ]
+        restaurant.reviews = reviews
+        return reviews
 
-        # Giờ mở cửa
-        opening_hours = r.get("opening_hours", {}).get("weekday_text", [])
+    # ── 4. AI menu ────────────────────────────────────────────────────────────
 
-        detail = RestaurantDetail(
-            place_id=place_id,
-            name=r.get("name", ""),
-            address=r.get("formatted_address", ""),
-            lat=r_lat,
-            lng=r_lng,
-            distance_m=dist,
-            distance_text=dist_text,
-            maps_url=murl,
-            rating=r.get("rating"),
-            review_count=r.get("user_ratings_total"),
-            price_level=r.get("price_level"),
-            is_open_now=r.get("opening_hours", {}).get("open_now"),
-            types=r.get("types", []),
-            photo_url=photo_url,
-            phone=r.get("formatted_phone_number"),
-            website=r.get("website"),
-            opening_hours=opening_hours,
-            reviews=reviews,
-        )
-
-        if include_ai_menu and self._akey:
-            detail.menu_items = self._infer_menu(detail)
-
-        return detail
-
-    # ── 4. AI menu inference ──────────────────────────────────────────────────
-
-    def _infer_menu(self, detail: RestaurantDetail) -> list[MenuItem]:
+    def get_ai_menu(self, restaurant: Restaurant) -> list[MenuItem]:
         """
-        Dùng Claude để suy luận danh sách món tiêu biểu dựa trên
-        tên quán, địa chỉ, loại hình, và nội dung review thực tế.
-        Trả về list[MenuItem], [] nếu Claude không trả về JSON hợp lệ.
+        Dùng Claude Haiku suy luận 4–6 món tiêu biểu.
+        Dùng tên quán + type + offerings + user_review làm context.
+        Gán vào restaurant.menu_items nếu muốn lưu lại.
+        Trả về [] nếu chưa có ANTHROPIC_API_KEY hoặc parse thất bại.
         """
-        review_text = "\n".join(
-            f'- {rv.author} ({rv.rating}⭐): {rv.text[:300]}'
-            for rv in detail.reviews[:5]
-        ) or "Chưa có review."
+        if not self._akey:
+            return []
+        try:
+            import anthropic
+        except ImportError:
+            return []
 
-        prompt = f"""Dưới đây là thông tin về một quán ăn tại Việt Nam:
-Tên: {detail.name}
-Địa chỉ: {detail.address}
-Loại hình: {', '.join(detail.types)}
-Review thực tế:
-{review_text}
+        prompt = f"""Thông tin về một cơ sở ăn uống tại Việt Nam:
+Tên: {restaurant.title}
+Loại hình: {restaurant.type}
+Địa chỉ: {restaurant.address}
+Đồ uống/món có: {', '.join(restaurant.offerings) or 'Không rõ'}
+Review nổi bật: {restaurant.user_review or 'Không có'}
 
-Dựa vào tên quán, địa chỉ và nội dung review, suy luận 4–6 món tiêu biểu quán này có thể phục vụ.
-Chỉ trả về JSON hợp lệ, không thêm bất kỳ text nào khác:
-[
-  {{
-    "dish": "Tên món",
-    "description": "Mô tả ngắn 1 câu",
-    "estimated_price": "35.000–55.000đ"
-  }}
-]"""
+Suy luận 4–6 món tiêu biểu. Chỉ trả về JSON, không thêm text nào khác:
+[{{"dish":"Tên món","description":"Mô tả 1 câu","estimated_price":"XX.000–YY.000đ"}}]"""
 
         client = anthropic.Anthropic(api_key=self._akey)
         msg = client.messages.create(
-            model="claude-haiku-4-5-20251001",  # dùng Haiku vì task đơn giản, nhanh và rẻ hơn
+            model="claude-haiku-4-5-20251001",
             max_tokens=512,
             messages=[{"role": "user", "content": prompt}],
         )
         raw = msg.content[0].text.strip()
-        # Bỏ markdown code fence nếu có
         if "```" in raw:
             raw = raw.split("```")[1].lstrip("json").strip()
         try:
-            items = json.loads(raw)
-            return [MenuItem(**item) for item in items]
-        except (json.JSONDecodeError, TypeError):
+            items = [MenuItem(**i) for i in json.loads(raw)]
+            restaurant.menu_items = items
+            return items
+        except (json.JSONDecodeError, TypeError, KeyError):
             return []
