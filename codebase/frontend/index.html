@@ -8,6 +8,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
   <link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+  <!-- Markdown parser -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@9/marked.min.js"></script>
   <style>
 /* ════════════════════════════════════
    DESIGN TOKENS
@@ -298,6 +300,44 @@ body{
 }
 .msg-time{font-size:10px;color:var(--txt-4);padding:0 3px}
 
+/* ── Markdown inside bot bubble ──────────────────── */
+.bubble.bot .md-body{font-size:13.5px;line-height:1.7;color:var(--txt-1)}
+.bubble.bot .md-body p{margin:0 0 8px}
+.bubble.bot .md-body p:last-child{margin-bottom:0}
+.bubble.bot .md-body h1,.bubble.bot .md-body h2{font-size:15px;font-weight:800;margin:10px 0 6px;color:var(--txt-1)}
+.bubble.bot .md-body h3{font-size:13.5px;font-weight:700;margin:8px 0 5px;color:var(--txt-2)}
+.bubble.bot .md-body strong,.bubble.bot .md-body b{font-weight:700;color:var(--txt-1)}
+.bubble.bot .md-body em,.bubble.bot .md-body i{font-style:italic;color:var(--txt-2)}
+.bubble.bot .md-body ul,.bubble.bot .md-body ol{margin:6px 0 8px 18px;padding:0}
+.bubble.bot .md-body li{margin:3px 0;line-height:1.6}
+.bubble.bot .md-body ul li{list-style:disc}
+.bubble.bot .md-body ol li{list-style:decimal}
+.bubble.bot .md-body code{
+  background:var(--surface-2);border:1px solid var(--border);
+  border-radius:5px;padding:1px 6px;
+  font-family:'JetBrains Mono',monospace;font-size:12px;
+  color:var(--primary);
+}
+.bubble.bot .md-body pre{
+  background:var(--surface-2);border:1px solid var(--border);
+  border-radius:var(--rad-md);padding:10px 12px;margin:8px 0;
+  overflow-x:auto;
+}
+.bubble.bot .md-body pre code{background:none;border:none;padding:0;color:var(--txt-2)}
+.bubble.bot .md-body blockquote{
+  border-left:3px solid var(--primary);margin:8px 0;
+  padding:6px 12px;background:rgba(255,107,53,.05);
+  border-radius:0 var(--rad-sm) var(--rad-sm) 0;
+  color:var(--txt-2);font-style:italic;
+}
+.bubble.bot .md-body a{color:var(--blue);text-decoration:underline}
+.bubble.bot .md-body a:hover{color:var(--primary)}
+.bubble.bot .md-body hr{border:none;border-top:1px solid var(--border);margin:10px 0}
+.bubble.bot .md-body table{width:100%;border-collapse:collapse;font-size:12.5px;margin:8px 0}
+.bubble.bot .md-body th{background:var(--surface-2);font-weight:700;padding:6px 10px;border:1px solid var(--border);text-align:left}
+.bubble.bot .md-body td{padding:5px 10px;border:1px solid var(--border)}
+.bubble.bot .md-body tr:nth-child(even) td{background:rgba(0,0,0,.02)}
+
 /* MCQ */
 .mcq-label{font-size:11px;font-weight:700;color:var(--txt-3);
   text-transform:uppercase;letter-spacing:.4px;margin:10px 0 7px}
@@ -333,7 +373,6 @@ body{
 
 .reco-top{display:flex;gap:12px;align-items:flex-start}
 .reco-emoji{font-size:32px;flex-shrink:0;line-height:1;margin-top:2px}
-.reco-img{width:68px;height:68px;object-fit:cover;border-radius:var(--rad-md);flex-shrink:0;background:var(--surface-2)}
 .reco-body{flex:1;min-width:0}
 .reco-header{display:flex;align-items:center;gap:7px;margin-bottom:3px;flex-wrap:wrap}
 .reco-name{font-size:14px;font-weight:700}
@@ -989,11 +1028,18 @@ function renderTypingDots(){
 }
 function removeTypingDots(){const t=document.getElementById('typing-row');if(t)t.remove()}
 
-function renderSimpleBot(html){
+function renderSimpleBot(text){
   removeTypingDots();
+  // Parse markdown → HTML nếu marked đã load, fallback về text thuần
+  let content;
+  try {
+    content = `<div class="md-body">${marked.parse(text)}</div>`;
+  } catch(e) {
+    content = text;
+  }
   appendRow(`<div class="avatar bot">🍜</div>
   <div class="bwrap">
-    <div class="bubble bot">${html}</div>
+    <div class="bubble bot">${content}</div>
     <div class="msg-time">${getTime()}</div>
   </div>`);
 }
@@ -1286,14 +1332,10 @@ async function handleSend(){
 }
 
 function renderAPIRecommendations(recs) {
-  const cardsHtml = recs.map((r, i) => {
-    const thumb = r.thumbnail
-      ? `<img class="reco-img" src="${r.thumbnail}" alt="${r.name}" loading="lazy" onerror="this.replaceWith(Object.assign(document.createElement('div'),{className:'reco-emoji',textContent:'🍽️'}))">`
-      : `<div class="reco-emoji">🍽️</div>`;
-    return `
+  const cardsHtml = recs.map((r, i) => `
     <div class="reco-card r${i+1}">
       <div class="reco-top">
-        ${thumb}
+        <div class="reco-emoji">🍽️</div>
         <div class="reco-body">
           <div class="reco-header">
             <span class="reco-name">${r.name}</span>
@@ -1302,7 +1344,6 @@ function renderAPIRecommendations(recs) {
           <div class="reco-desc">${r.vicinity || r.address || ''}</div>
           <div class="reco-tags">
             <span class="tag score">⭐ ${r.rating || '?'}</span>
-            ${r.distance ? `<span class="tag">📍 ${r.distance}</span>` : ''}
           </div>
         </div>
       </div>
@@ -1313,8 +1354,7 @@ function renderAPIRecommendations(recs) {
       <div class="card-actions">
         ${r.maps_link ? `<a class="map-btn" href="${r.maps_link}" target="_blank" rel="noopener noreferrer">Xem trên Google Maps</a>` : ''}
       </div>
-    </div>`;
-  }).join('');
+    </div>`).join('');
 
   appendRow(`<div class="avatar bot">🍜</div>
   <div class="bwrap" style="max-width:86%">
