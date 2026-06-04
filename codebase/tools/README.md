@@ -16,8 +16,7 @@ import `TOOL_FUNCTIONS` từ registry này.
 | Tool | Loại | Mô tả | Status |
 |---|---|---|---|
 | `clarify` | control | Hỏi MCQ / hỏi bổ sung thông tin | ✅ Hoạt động |
-| `search_nearby` | live_api | Tìm quán ăn gần vị trí GPS | 🔧 Mock stub |
-| `get_reviews` | live_api | Lấy review quán ăn | 🔧 Mock stub |
+| `search_local` | live_api | Tìm quán ăn và chi tiết gần vị trí GPS (SerpAPI) | ✅ Hoạt động |
 | `format_recommendations` | local_formatter | Format 3 quán gợi ý cho user | ✅ Hoạt động |
 
 ## Frontmatter Fields (TOOL.md)

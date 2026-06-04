@@ -82,12 +82,12 @@ TOOL_DEFINITION = {
 
 # ── Execute ───────────────────────────────────────────────────────────────────
 
-def execute(tool_input: dict) -> str:
+def execute(**kwargs) -> str:
     """
     Chạy tool khi agent gọi.
 
     Params:
-        tool_input : dict theo input_schema ở trên
+        kwargs : dict theo input_schema ở trên
                      {"query": "quán ăn", "lat": 12.2451, "lng": 109.1943, ...}
 
     Trả về:
@@ -129,11 +129,19 @@ def execute(tool_input: dict) -> str:
           "error": null
         }
     """
-    query      = tool_input.get("query", "quán ăn")
-    lat        = tool_input.get("lat")
-    lng        = tool_input.get("lng")
-    radius_km  = float(tool_input.get("radius_km", 1.5))
-    max_results = min(int(tool_input.get("max_results", 5)), 20)
+    query      = kwargs.get("query", "quán ăn")
+    keyword    = kwargs.get("keyword")
+    meal_time  = kwargs.get("meal_time")
+    
+    if keyword and keyword not in query:
+        query = f"{query} {keyword}"
+    if meal_time and meal_time not in query:
+        query = f"{query} {meal_time}"
+        
+    lat        = kwargs.get("lat")
+    lng        = kwargs.get("lng")
+    radius_km  = float(kwargs.get("radius_km", 1.5))
+    max_results = min(int(kwargs.get("max_results", 5)), 20)
 
     try:
         svc = LocationService()

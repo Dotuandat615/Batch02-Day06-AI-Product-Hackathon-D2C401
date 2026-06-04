@@ -8,7 +8,7 @@
       "phase": "B", "suite": "base",
       "input": "Tôi đang ở Nha Trang (12.238, 109.196), muốn ăn trưa một mình, đặc sản địa phương, không có yêu cầu đặc biệt.",
       "failure_type": "wrong_tool",
-      "expect": {"tool_calls": [{"name": "search_nearby", "args": {"lat": 12.238, "lng": 109.196}}]},
+      "expect": {"tool_calls": [{"name": "search_nearby_restaurants", "args": {"lat": 12.238, "lng": 109.196}}]},
       "metadata": {"skill": "happy_path_routing", "difficulty": "easy", "what_it_tests": "Đủ thông tin → gọi search_nearby, KHÔNG gọi clarify."}
     },
     {
@@ -40,7 +40,7 @@
       "phase": "B", "suite": "base",
       "input": "Tôi ở Nha Trang (12.238, 109.196), muốn ăn trưa một mình, tôi ăn chay.",
       "failure_type": "wrong_arg_value",
-      "expect": {"tool_calls": [{"name": "search_nearby", "args": {"keyword": "chay"}}]},
+      "expect": {"tool_calls": [{"name": "search_nearby_restaurants", "args": {"keyword": "chay"}}]},
       "metadata": {"skill": "dietary_keyword_routing", "difficulty": "medium", "what_it_tests": "Yêu cầu ăn chay → search_nearby với keyword 'chay'."}
     },
     {
@@ -68,7 +68,7 @@
         {"role": "user", "content": "Tìm quán giúp tôi đi"}
       ],
       "failure_type": "missing_info",
-      "expect": {"tool_calls": [{"name": "search_nearby", "args": {"lat": 12.238, "lng": 109.196}}]},
+      "expect": {"tool_calls": [{"name": "search_nearby_restaurants", "args": {"lat": 12.238, "lng": 109.196}}]},
       "metadata": {"skill": "multiturn_location_fill", "difficulty": "hard", "what_it_tests": "3 turns: lượt 1 thiếu vị trí, lượt 2 cung cấp tọa độ → latest turn gọi search_nearby."}
     },
     {
@@ -80,7 +80,7 @@
         {"role": "user", "content": "Tìm quán chay giúp tôi."}
       ],
       "failure_type": "wrong_arg_value",
-      "expect": {"tool_calls": [{"name": "search_nearby", "args": {"keyword": "chay"}}]},
+      "expect": {"tool_calls": [{"name": "search_nearby_restaurants", "args": {"keyword": "chay"}}]},
       "metadata": {"skill": "multiturn_dietary_correction", "difficulty": "hard", "what_it_tests": "3 turns: bổ sung yêu cầu ăn chay → search_nearby với keyword chay."}
     },
     {
@@ -92,7 +92,7 @@
         {"role": "user", "content": "Vẫn ở vị trí cũ, vẫn đặc sản."}
       ],
       "failure_type": "wrong_arg_value",
-      "expect": {"tool_calls": [{"name": "search_nearby", "args": {"lat": 12.238, "lng": 109.196, "meal_time": "tối"}}]},
+      "expect": {"tool_calls": [{"name": "search_nearby_restaurants", "args": {"lat": 12.238, "lng": 109.196, "meal_time": "tối"}}]},
       "metadata": {"skill": "multiturn_meal_time_correction", "difficulty": "hard", "what_it_tests": "3 turns: sửa bữa trưa → bữa tối, giữ vị trí và phong cách."}
     }
   ]

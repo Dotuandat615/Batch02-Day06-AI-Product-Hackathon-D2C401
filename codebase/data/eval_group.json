@@ -11,7 +11,7 @@
       "input": "Tôi đang ở Nha Trang (12.238, 109.196), muốn ăn trưa một mình, thích đặc sản địa phương, không có yêu cầu đặc biệt.",
       "failure_type": "wrong_tool",
       "expect": {
-        "tool_calls": [{"name": "search_nearby", "args": {"lat": 12.238, "lng": 109.196}}]
+        "tool_calls": [{"name": "search_nearby_restaurants", "args": {"lat": 12.238, "lng": 109.196}}]
       },
       "metadata": {
         "skill": "happy_path_full_info",
@@ -27,7 +27,7 @@
       "input": "Tôi ở Nha Trang (12.238, 109.196), muốn ăn trưa một mình nhưng không ăn hải sản.",
       "failure_type": "wrong_arg_value",
       "expect": {
-        "tool_calls": [{"name": "search_nearby", "args": {"lat": 12.238, "lng": 109.196, "keyword": "không hải sản"}}]
+        "tool_calls": [{"name": "search_nearby_restaurants", "args": {"lat": 12.238, "lng": 109.196, "keyword": "không hải sản"}}]
       },
       "metadata": {
         "skill": "dietary_no_seafood",
@@ -43,7 +43,7 @@
       "input": "Tôi ở Nha Trang (12.238, 109.196), tôi ăn chay, tìm quán chay trưa nay.",
       "failure_type": "wrong_arg_value",
       "expect": {
-        "tool_calls": [{"name": "search_nearby", "args": {"keyword": "chay"}}]
+        "tool_calls": [{"name": "search_nearby_restaurants", "args": {"keyword": "chay"}}]
       },
       "metadata": {
         "skill": "dietary_vegan_keyword",
@@ -109,7 +109,7 @@
       "input": "Tôi đang ở Nha Trang (12.238, 109.196) lúc khuya, cần quán chay còn mở.",
       "failure_type": "wrong_boundary",
       "expect": {
-        "tool_calls": [{"name": "search_nearby", "args": {"lat": 12.238, "lng": 109.196, "keyword": "chay"}}]
+        "tool_calls": [{"name": "search_nearby_restaurants", "args": {"lat": 12.238, "lng": 109.196, "keyword": "chay"}}]
       },
       "metadata": {
         "skill": "low_confidence_night_vegan",
@@ -129,7 +129,7 @@
       ],
       "failure_type": "wrong_arg_value",
       "expect": {
-        "tool_calls": [{"name": "search_nearby", "args": {"keyword": "chay"}}]
+        "tool_calls": [{"name": "search_nearby_restaurants", "args": {"keyword": "chay"}}]
       },
       "metadata": {
         "skill": "multiturn_dietary_correction",

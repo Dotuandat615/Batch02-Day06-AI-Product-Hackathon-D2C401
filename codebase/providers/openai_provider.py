@@ -15,7 +15,7 @@ class OpenAIProvider:
         *,
         api_key_env: str = "OPENAI_API_KEY",
         base_url: str | None = None,
-        default_model: str = "deepseek-v4-pro",
+        default_model: str = "gpt-5.4-mini",
     ) -> None:
         self.api_key_env = api_key_env
         self.base_url = base_url or os.getenv("OPENAI_BASE_URL")

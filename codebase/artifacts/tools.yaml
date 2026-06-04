@@ -34,12 +34,13 @@ tools:
     parameters:
       type: object
       properties:
-        query: {type: string, description: "Từ khoá tìm kiếm. Nên dùng tiếng Việt."}
+        query: {type: string, description: "Từ khoá tìm kiếm chung. Nên dùng tiếng Việt."}
+        keyword: {type: string, description: "Từ khóa đặc biệt (như chay, hải sản, bún bò, ...)."}
+        meal_time: {type: string, description: "Bữa ăn (sáng, trưa, tối, khuya)."}
         lat: {type: number, description: "Vĩ độ (latitude) của người dùng."}
         lng: {type: number, description: "Kinh độ (longitude) của người dùng."}
         radius_km: {type: number, default: 1.5, description: "Bán kính tìm kiếm tính bằng km."}
         max_results: {type: integer, default: 5, description: "Số quán tối đa trả về."}
-      required: [query]
 
   - name: format_recommendations
     description: >
