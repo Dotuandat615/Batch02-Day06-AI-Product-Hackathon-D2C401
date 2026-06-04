@@ -750,12 +750,13 @@ def check_log_updated(after_timestamp: float) -> dict:
     last_lines = all_lines[-8:] if len(all_lines) >= 8 else all_lines
     log_text   = "\n".join(last_lines)
 
-    # Kiểm tra đủ 4 loại log entry theo logger.py của Person 4
+    # Kiểm tra đủ 5 loại log entry (bao gồm cả số thứ tự)
     coverage = {
-        "REQUEST":  "REQUEST"  in log_text,
-        "PLACES":   "PLACES"   in log_text,
-        "AI_RESP":  "AI_RESP"  in log_text,
-        "ERROR":    True,  # ERROR chỉ xuất hiện khi có lỗi — không bắt buộc
+        "[1] REQUEST":       "[1] REQUEST"       in log_text,
+        "[2] PLACES":        "[2] PLACES"        in log_text,
+        "[3] AI_RESP":       "[3] AI_RESP"       in log_text,
+        "[4] AGENT_METRICS": "[4] AGENT_METRICS" in log_text,
+        "ERROR":             True,  # ERROR chỉ xuất hiện khi có lỗi — không bắt buộc
     }
     missing = [k for k, v in coverage.items() if not v and k != "ERROR"]
 
