@@ -60,6 +60,56 @@ async def chat(req: ChatRequest):
 def health():
     return {"status": "ok"}
 
+import re
+
+@app.get("/metrics")
+def get_metrics():
+    """
+    Endpoint của Person 4 (Tester/Logger)
+    Đọc file app.log và tính toán các metrics (Observability)
+    """
+    log_file = "app.log"
+    if not os.path.exists(log_file):
+        return {"status": "no_logs", "message": "Chưa có file app.log"}
+        
+    stats = {
+        "total_requests": 0,
+        "total_places_found": 0,
+        "total_ai_responses": 0,
+        "avg_latency_ms": 0,
+        "errors": 0
+    }
+    
+    latency_sum = 0
+    latency_count = 0
+    
+    try:
+        with open(log_file, "r", encoding="utf-8", errors="ignore") as f:
+            for line in f:
+                if "[1] REQUEST" in line:
+                    stats["total_requests"] += 1
+                elif "[2] PLACES" in line:
+                    match = re.search(r"found=(\d+)", line)
+                    if match:
+                        stats["total_places_found"] += int(match.group(1))
+                elif "[3] AI_RESP" in line:
+                    stats["total_ai_responses"] += 1
+                elif "[4] AGENT_METRICS" in line:
+                    match = re.search(r"latency=(\d+)ms", line)
+                    if match:
+                        latency_sum += int(match.group(1))
+                        latency_count += 1
+                elif "ERROR |" in line:
+                    stats["errors"] += 1
+                    
+        if latency_count > 0:
+            stats["avg_latency_ms"] = round(latency_sum / latency_count, 2)
+            
+        return {"status": "success", "data": stats}
+    except Exception as e:
+        return {"status": "error", "message": str(e)}
+
+
 # Serve frontend
 os.makedirs("frontend", exist_ok=True)
 if not os.path.exists("frontend/index.html"):
