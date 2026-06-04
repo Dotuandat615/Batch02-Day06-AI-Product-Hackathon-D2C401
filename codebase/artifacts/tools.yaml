@@ -72,6 +72,7 @@ tools:
                       lng: {type: number}
               warning: {type: string, description: "Cảnh báo nếu có (review cũ, quán có thể đóng)"}
               thumbnail: {type: string, description: "URL ảnh thumbnail của quán (lấy từ search_nearby_restaurants)"}
+              maps_url: {type: string, description: "Link Google Maps chỉ đường đến quán (lấy từ search_nearby_restaurants)"}
         user_lat: {type: number, description: "Vĩ độ người dùng (để tính khoảng cách)."}
         user_lng: {type: number, description: "Kinh độ người dùng (để tính khoảng cách)."}
       required: [recommendations]
