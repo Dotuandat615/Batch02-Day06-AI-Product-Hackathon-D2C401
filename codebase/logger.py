@@ -1,6 +1,6 @@
 import logging
 import json
->>>>>>>>> Temporary merge branch 2
+from datetime import datetime
 
 logging.basicConfig(
     level=logging.INFO,
